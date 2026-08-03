@@ -76,10 +76,16 @@ remotely over its HTTP/MCP interface with a bearer token. See JOURNAL.md entry
 │    think over HTTP         │
 │  - Cross-source join       │
 │    (email↔drive matching)  │
-│  - Claude (Anthropic API)  │
-│    for final synthesis     │
+│  - Gemini (Google AI API)  │
+│    for routing + final     │
+│    synthesis                │
 └───────────────────────────┘
 ```
+
+**Update (2026-08-04):** Reasoning/routing model switched from Claude
+(Anthropic) to **Gemini** — one Google AI API key now covers both gbrain's
+embeddings and the app's own query routing/synthesis, removing the
+Anthropic dependency entirely. See JOURNAL.md entry 2026-08-04.
 
 ## 4. Data model
 
@@ -126,10 +132,11 @@ Tier 2 (must attempt, at least one working live):
 
 - **Router**: given a user question, classify as Tier 1 (single source) or
   Tier 2 (needs join), and decide which source(s) to query. Implemented as a
-  Claude tool-use loop with two tools: `search_gmail`, `search_drive`, plus a
-  `correlate` step that's really just prompting Claude with both result sets
-  and asking it to reason across them — no bespoke join algorithm required
-  beyond the participant/filename heuristics in §4.
+  Gemini function-calling loop (via the `ai` SDK's Google provider) with two
+  tools: `search_gmail`, `search_drive`, plus a `correlate` step that's really
+  just prompting Gemini with both result sets and asking it to reason across
+  them — no bespoke join algorithm required beyond the participant/filename
+  heuristics in §4.
 - **Grounding rule**: the model only answers from retrieved documents. If
   nothing relevant is retrieved, it says so rather than fabricating — this is
   an explicit judged criterion.
@@ -149,9 +156,9 @@ Tier 2 (must attempt, at least one working live):
 
 1. **Phase 1 — Backend**: Next.js scaffold, Google OAuth, Gmail + Drive API
    clients, ingestion pipeline, gbrain integration, normalized storage.
-2. **Phase 2 — Reasoning**: retrieval over gbrain, Claude tool-use router,
-   Tier 1 answers working, Tier 2 join logic and prompts, eval against §5
-   query list.
+2. **Phase 2 — Reasoning**: retrieval over gbrain, Gemini function-calling
+   router, Tier 1 answers working, Tier 2 join logic and prompts, eval
+   against §5 query list.
 3. **Phase 3 — Frontend**: chat UI, streaming wiring, sources footnote,
    connect/re-sync screens, deploy to Vercel.
 

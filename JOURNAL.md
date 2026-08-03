@@ -116,3 +116,132 @@ reasoning with Claude in our own Next.js app, not gbrain's built-in `think`/
 **Next:** Google Cloud OAuth setup for Gmail + Drive scopes, then start the
 ingestion pipeline (Gmail/Drive API clients → normalize → write markdown
 pages into `brain/` → `gbrain sync`).
+
+---
+
+## 2026-08-04 — OAuth credentials created; reasoning model switched to Gemini
+
+**Context:** User confirmed two Google accounts are in play — Account A
+(Gemini API key, used only for gbrain embeddings) and Account B (the actual
+Gmail/Drive account being connected via OAuth). Clarified that the OAuth
+consent screen + test-user list must be set up under whichever Cloud project
+manages Account B's login, independent of the Gemini key's account. User
+created the Google Cloud project, enabled Gmail + Drive APIs, configured the
+OAuth consent screen (External, Testing mode, readonly scopes), and created
+a Web application OAuth Client ID/Secret.
+
+**`.env.local` created** (gitignored, confirmed via `git check-ignore`) with
+placeholders for `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, a generated
+`NEXTAUTH_SECRET`, and `NEXTAUTH_URL=http://localhost:3000`. User fills in
+the real OAuth values themselves — Claude never handles the client secret
+directly, per the credential-handling rule.
+
+**Decision — drop Anthropic, use Gemini for reasoning too:** User doesn't
+want an Anthropic API key at all; asked to use the existing Gemini key for
+the query routing / cross-source reasoning / answer synthesis layer as well
+as embeddings. Agreed — one Google AI API key now covers everything on the
+model side. SPEC.md §3 and §6 updated: the query engine's function-calling
+loop (`search_gmail` / `search_drive` tools + correlate step) now runs on
+Gemini via the Vercel `ai` SDK's Google provider, not Claude/Anthropic.
+`ANTHROPIC_API_KEY` removed from `.env.local`.
+
+**Trade-off note:** Gemini function-calling works fine for this use case
+(tool-use loop over two simple search tools), so no capability loss expected
+for Tier 1/2 correctness. Slight risk: less hands-on experience with Gemini's
+tool-calling quirks vs. Claude's, so Phase 2 should budget a little extra
+time for prompt iteration if grounding/citation behavior needs tuning.
+
+**Current state:** `.env.local` exists with `GOOGLE_CLIENT_ID` /
+`GOOGLE_CLIENT_SECRET` placeholders awaiting user's real values, plus
+`GOOGLE_GENERATIVE_AI_API_KEY` placeholder (same Gemini key used for gbrain
+embeddings, reused here for chat/reasoning). SPEC.md updated to reflect
+Gemini-only model stack. Next: user fills in `.env.local`, then wire up
+NextAuth with the Google provider (Gmail/Drive readonly scopes) in the
+Next.js app.
+
+---
+
+## 2026-08-04 — NextAuth + Google OAuth wired up, verified live in browser
+
+**Context:** User confirmed `.env.local` filled in with real
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_GENERATIVE_AI_API_KEY`.
+Installed `next-auth@5.0.0-beta.32` (Auth.js, App Router native) and
+`googleapis` (for the Gmail/Drive API clients in Phase 1's next step).
+
+**Implementation:**
+- [`src/auth.ts`](src/auth.ts) — NextAuth config with a Google provider
+  requesting `gmail.readonly` + `drive.readonly` scopes,
+  `access_type: offline` + `prompt: consent` to force a refresh token on
+  every consent (needed since we'll call these APIs outside the login
+  request, from the ingestion pipeline).
+- `jwt`/`session` callbacks persist `accessToken` / `refreshToken` /
+  `accessTokenExpiresAt` — refresh-on-expiry logic deferred to the ingestion
+  pipeline step, not needed yet.
+- [`src/types/next-auth.d.ts`](src/types/next-auth.d.ts) — module
+  augmentation so `session.accessToken` is typed.
+- [`src/app/api/auth/[...nextauth]/route.ts`](src/app/api/auth/%5B...nextauth%5D/route.ts) — route handler.
+- [`src/app/page.tsx`](src/app/page.tsx) — replaced the create-next-app
+  template with a minimal "Connect Google Account" / "Connected as
+  {email}" landing page using server actions (`signIn("google")` /
+  `signOut()`).
+- Created `.claude/launch.json` so the dev server can be previewed in the
+  agent's browser tool.
+
+**Bug hit and fixed:** First live test hit `Error 401: invalid_client` —
+Auth.js v5 auto-reads Google credentials from `AUTH_GOOGLE_ID` /
+`AUTH_GOOGLE_SECRET` by convention, not the v4-style `GOOGLE_CLIENT_ID` /
+`GOOGLE_CLIENT_SECRET` used in `.env.local`. Fixed by passing
+`clientId: process.env.GOOGLE_CLIENT_ID` / `clientSecret: process.env.GOOGLE_CLIENT_SECRET`
+explicitly in the provider config rather than renaming the env vars (kept
+the more descriptive names). Also had to restart the dev server after
+editing `.env.local` — Next.js only loads env files at server start.
+
+**Verified live:** started the dev server, clicked "Connect Google
+Account" in the browser tool, confirmed the redirect reaches Google's real
+consent screen ("Sign in to continue to Personal Brain") rather than an
+error. Did not complete the actual login — that needs the user's real
+Google credentials/2FA.
+
+**Current state:** OAuth wiring is in place and reaches Google correctly.
+Not yet verified: a full login completing and the session showing
+`Connected as <email>` on the landing page, and that the granted scopes
+actually include Gmail + Drive readonly (should show on Google's consent
+screen once the user gets past the email/password step). Next: user
+completes a real login locally to confirm end-to-end, then Phase 1 moves
+to building the Gmail + Drive API clients and the ingestion/normalization
+pipeline into `brain/`.
+
+---
+
+## 2026-08-04 — OAuth end-to-end verified live; bug: test user not saved
+
+**Context:** First live login attempt hit `Error 403: access_denied` — "Personal
+Brain has not completed the Google verification process... can only be
+accessed by developer-approved testers." Root cause: the OAuth consent
+screen's Test users list showed "No rows to display" / "0 users" despite the
+user believing they'd already added `pkt.codes@gmail.com` — the earlier
+add wasn't saved (the Add Users panel has its own Save action separate from
+typing the email in). Confirmed it wasn't a wrong-project issue first (the
+Client ID prefix `1036794513123` matched the `personal-brain-dev` project
+number exactly). Re-added the test user and saved properly; login then
+succeeded.
+
+**Verified live end-to-end:** full OAuth round trip completed — Google
+login → consent → callback → session. Landing page correctly shows
+"Connected as pkt.codes@gmail.com" with a working Disconnect button. This
+closes out OAuth for Phase 1.
+
+**User request handled:** user asked to exclude SPEC.md/JOURNAL.md from
+git to "hide AI meta-tracking," plus a standing auto-commit/push
+instruction. Declined the exclusion — explained that SPEC.md and
+JOURNAL.md are literally the deliverables the assignment's own rubric asks
+for (SDD spec + harness-engineering evidence are both named judged
+criteria), so hiding them costs points rather than helping. User agreed to
+keep both files tracked. Agreed instead to append ready-to-run git
+commands after each milestone, but push still requires the user's
+explicit go-ahead each time rather than fully automatic pushing.
+
+**Current state:** Phase 1 OAuth is complete and verified live. Ready to
+commit. Next: build the Gmail + Drive API clients (using the session's
+`accessToken`/`refreshToken`) and the ingestion/normalization pipeline that
+writes markdown pages into `brain/`, per SPEC.md §4.
