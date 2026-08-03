@@ -80,9 +80,20 @@ export type BrainSearchHit = {
  * `gbrain search` (plain CLI) has no --json output; `gbrain call <tool> <json>`
  * invokes gbrain's MCP tool surface directly and returns structured JSON.
  * See JOURNAL.md 2026-08-04 for how this was discovered.
+ *
+ * `type` filters client-side: the search tool's own `type` param is silently
+ * ignored server-side (verified empirically — a type:"email" call still
+ * returned "source" pages), so we over-fetch and filter on the `type` field
+ * already present in each result instead of trusting the param.
  */
-export async function searchBrain(query: string, limit = 10): Promise<BrainSearchHit[]> {
-  const args = JSON.stringify({ query, source: GBRAIN_SOURCE_ID, limit });
+export async function searchBrain(
+  query: string,
+  options: { limit?: number; type?: "email" | "source" } = {},
+): Promise<BrainSearchHit[]> {
+  const { limit = 10, type } = options;
+  const overFetchLimit = type ? Math.max(limit * 4, 20) : limit;
+
+  const args = JSON.stringify({ query, source: GBRAIN_SOURCE_ID, limit: overFetchLimit });
   const { stdout } = await run(gbrainBin(), ["call", "search", args]);
 
   try {
@@ -94,15 +105,21 @@ export async function searchBrain(query: string, limit = 10): Promise<BrainSearc
       chunk_text?: string;
     }> = JSON.parse(stdout);
 
-    return results.map((r) => ({
+    const hits = results.map((r) => ({
       slug: r.slug ?? "",
       type: r.type ?? "",
       title: r.title ?? "",
       score: r.score ?? 0,
       snippet: r.chunk_text ?? "",
     }));
+
+    const filtered = type ? hits.filter((h) => h.type === type) : hits;
+    return filtered.slice(0, limit);
   } catch (err) {
     console.error("Failed to parse gbrain call search output", err, stdout);
     return [];
   }
 }
+
+export const searchGmail = (query: string, limit = 10) => searchBrain(query, { limit, type: "email" });
+export const searchDrive = (query: string, limit = 10) => searchBrain(query, { limit, type: "source" });

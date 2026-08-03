@@ -385,3 +385,62 @@ query would need to correlate. Good early signal for Phase 2.
 gbrain-backed storage) is functionally complete and verified against real
 data. Ready to commit. Next: Phase 2 — retrieval + Gemini function-calling
 router for Tier 1/Tier 2 queries, per SPEC.md §6.
+
+---
+
+## 2026-08-04 — Phase 2: query engine built, all 3 example queries verified live
+
+**Implementation:**
+- Installed `ai` (v7.0.48), `@ai-sdk/google` (v4.0.31), `zod`.
+- [`src/lib/brain/gbrain-cli.ts`](src/lib/brain/gbrain-cli.ts) —
+  `searchBrain` now takes an options object with an optional `type` filter,
+  plus `searchGmail`/`searchDrive` convenience wrappers. **Discovery:**
+  `gbrain call search`'s own `type` parameter is silently ignored
+  server-side — a `type: "email"` call still returned `source`-typed pages
+  mixed in. Worked around by over-fetching (4x the requested limit, min 20)
+  and filtering client-side on the `type` field already present in each
+  result, then truncating to the requested limit.
+- [`src/lib/query/tools.ts`](src/lib/query/tools.ts) — `search_gmail` /
+  `search_drive` as AI SDK `tool()` definitions wrapping the above, per
+  SPEC.md §6's two-tool router design.
+- [`src/app/api/chat/route.ts`](src/app/api/chat/route.ts) — `streamText`
+  with Gemini, both tools, `stopWhen: stepCountIs(5)` (multi-step tool
+  loop), and a system prompt encoding the grounding rule (answer only from
+  tool results; say "couldn't find it" rather than guess; call both tools
+  when a question could plausibly span sources; cite which
+  email/file an answer came from).
+
+**Bug hit and fixed — `gemini-2.5-flash` is blocked for this API key.**
+First live test failed: `This model models/gemini-2.5-flash is no longer
+available to new users` (HTTP 404), despite the model still being listed
+by the `ListModels` endpoint for this key — Google restricts some model
+IDs to previously-grandfathered accounts. Queried `ListModels` directly to
+see what this key can actually call, and switched to `gemini-flash-latest`
+(an alias Google keeps pointed at their current recommended flash model,
+so it shouldn't need revisiting as models rotate).
+
+**Verified live against real data (bypassing the HTTP/auth layer via a
+throwaway Node script calling `generateText` directly with the same tools
+— only the user's own browser session is authenticated, so this was the
+fastest way to test the reasoning loop before Phase 3's UI exists):**
+- **Tier 1** ("find the email about being shortlisted") — correctly
+  retrieved both relevant emails via `search_gmail`, and proactively also
+  called `search_drive` and connected them to the linked assignment doc.
+- **Tier 2** ("what's my status on the SkillLayer application, and do I
+  have the take-home doc in Drive") — called both tools and produced a
+  single synthesized answer correctly combining Gmail (shortlist status,
+  round structure) with Drive (the actual assignment doc, deadline)  — this
+  is the exact cross-source correlation shape the assignment names as "the
+  actual point of the assignment."
+- **Grounding / no-hallucination** ("did I send Priya a contract draft") —
+  tried 7 different tool calls across both sources with varied phrasings,
+  found nothing, and correctly answered "I couldn't find it" instead of
+  fabricating an answer. This is the assignment's explicitly named judged
+  criterion ("wrong or 'I don't know' beats confident hallucination").
+
+**Current state:** The reasoning engine works end-to-end against real
+data for all three example queries in the assignment brief. Not yet built:
+the chat UI itself (Phase 3) — right now `/api/chat` exists and works, but
+there's no frontend calling it yet (the landing page still only has the
+re-sync button). Next: Phase 3, wire a chat UI to `/api/chat` using the AI
+SDK's `useChat` hook.
