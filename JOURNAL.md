@@ -296,3 +296,92 @@ normalizer (raw Gmail/Drive results → `BrainDocument` → markdown page with
 frontmatter) and writing those pages into `brain/`, then `gbrain sync` to
 index them — this is what turns "we can fetch data" into "gbrain can
 retrieve it."
+
+---
+
+## 2026-08-04 — Ingestion/normalization pipeline built and verified live end-to-end
+
+**Implementation:**
+- [`src/lib/brain/types.ts`](src/lib/brain/types.ts) — `BrainDocument`, matching SPEC.md §4.
+- [`src/lib/brain/normalize.ts`](src/lib/brain/normalize.ts) — `gmailMessageToBrainDocument`
+  / `driveFileToBrainDocument`. Extracts bare email addresses from `From`/`To`/`Cc`
+  headers and Drive owner fields into a unified `participants` list — this is
+  the field Tier 2 cross-source joins will match on.
+- [`src/lib/brain/markdown.ts`](src/lib/brain/markdown.ts) — renders a
+  `BrainDocument` to gbrain's native page format (YAML frontmatter + body).
+  Mapped `gmail` → gbrain's built-in `email` type (`emails/` prefix) and
+  `drive` → gbrain's `source` type (`sources/` prefix) — gbrain's
+  `gbrain-base-v2` schema pack (confirmed by reading
+  `src/core/schema-pack/base/gbrain-base-v2.yaml` in the cloned repo) has no
+  dedicated "drive file" type, and `source` (generic document/citation,
+  extractable) is the closest semantic fit. Used the `yaml` package for
+  frontmatter serialization rather than hand-rolling it — subjects/titles
+  routinely contain colons, quotes, parens that break naive YAML.
+- [`src/lib/brain/write.ts`](src/lib/brain/write.ts) — writes pages into
+  `brain/<type-dir>/<slugified-id>.md`.
+- [`src/lib/brain/gbrain-cli.ts`](src/lib/brain/gbrain-cli.ts) — shells out
+  to `git` (commit pending brain-repo changes) and `gbrain` (sync + search).
+- `POST /api/ingest/sync` ties it together: fetch Gmail + Drive → normalize
+  → write pages → commit → `gbrain sync`.
+- Added a real "Re-sync Gmail + Drive" button to the landing page
+  ([`src/app/SyncButton.tsx`](src/app/SyncButton.tsx)) — this doubles as
+  the manual re-sync UI already planned in SPEC.md §7, not just a test
+  harness.
+
+**Discovery — the brain repo needs to be its own git repository.** First
+`gbrain sync` attempt failed: `Source "default" has no local_path` (the
+legacy default source can't be repointed — `gbrain sources remove default`
+is blocked as "backs the pre-v0.17 brain"). Registered a new named source
+instead (`gbrain sources add personal-brain --path .`), which then refused
+with a clearer error: gbrain requires every `--path` source to be a real
+git repo with committed files (it walks git objects, so untracked files are
+invisible to it — an empty commit isn't enough either). `git init`'d
+`brain/` as its own **local-only** git repo, nested inside (and gitignored
+by) the app's repo — never pushed anywhere, purely to satisfy gbrain's
+sync mechanism. Also had to run `gbrain sources federate personal-brain` so
+default cross-source search picks it up without needing `--source` on
+every call.
+
+**Discovery — `gbrain search` has no `--json`; use `gbrain call <tool> <json>`
+instead.** The plain-text `search` command only prints `[score] slug --
+snippet`. `gbrain call search '{"query":...,"source":...,"limit":...}'`
+invokes gbrain's MCP tool surface directly and returns full structured JSON
+(slug, type, title, score, chunk_text, evidence, etc.) — much better for
+programmatic use. Discovered by testing against a throwaway page before
+wiring real ingestion on top of it.
+
+**Bug hit and fixed — Windows `shell: true` silently corrupts args with
+special characters.** First live sync from the UI failed: `git: 'Brain' is
+not a git command`. Root cause: `execFile` was called with `shell: true`
+on Windows to let a `.cmd` shim resolve, but Node's shell mode does NOT
+escape special characters in array args — a commit message like `"ingest:
+50 gmail message(s), 48 drive file(s)"` has parentheses, which cmd.exe
+interprets as command-grouping syntax, silently splitting the "command"
+into multiple statements. Fixed by dropping `shell: true` entirely: bun
+installs a real `gbrain.exe` (not a `.cmd`) on Windows, and `git` is a real
+`.exe` too, so neither needs a shell — `execFile` passes args to
+`CreateProcess` verbatim, no escaping required or possible to get wrong.
+
+**Bug hit and fixed — `spawn gbrain.exe ENOENT`.** After removing
+`shell: true`, resolving `"gbrain.exe"` by bare name via `PATH` still
+failed, because the already-running `next dev` process's inherited `PATH`
+predates the bun install — the same class of stale-environment issue as
+the earlier `GEMINI_API_KEY`/`setx` gotcha. Fixed by resolving an absolute
+path (`%USERPROFILE%\.bun\bin\gbrain.exe`) instead of relying on `PATH`,
+with a `GBRAIN_BIN_PATH` env override for other machines/deploy targets.
+
+**Verified live end-to-end (real data):** ingested 50 Gmail messages + 48
+Drive files → wrote 98 markdown pages → committed to the local brain repo
+→ `gbrain sync` imported + embedded them (93 pages after de-dup/filtering)
+→ confirmed via `gbrain sources status` (100% embedded, 0 fails) and a
+real `gbrain call search` query for "SkillLayer take home assignment",
+which correctly surfaced: the actual assignment Google Doc (score 0.93),
+the forwarded "Take Home Assignment" email pointing at that doc (score
+0.91), and the "Shortlisted Students" email with the assignment link
+(score 0.42) — top 3 results are exactly the cross-source cluster a Tier 2
+query would need to correlate. Good early signal for Phase 2.
+
+**Current state:** Phase 1 (backend: OAuth, connectors, ingestion,
+gbrain-backed storage) is functionally complete and verified against real
+data. Ready to commit. Next: Phase 2 — retrieval + Gemini function-calling
+router for Tier 1/Tier 2 queries, per SPEC.md §6.

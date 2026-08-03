@@ -1,4 +1,5 @@
 import { auth, signIn, signOut } from "@/auth";
+import { SyncButton } from "./SyncButton";
 
 export default async function Home() {
   const session = await auth();
@@ -16,8 +17,9 @@ export default async function Home() {
               Connected as <span className="font-medium">{session.user?.email}</span>
             </p>
             <p className="text-sm text-zinc-500 dark:text-zinc-500">
-              Chat interface goes here once ingestion + retrieval are wired up.
+              Chat interface goes here once retrieval + reasoning are wired up.
             </p>
+            <SyncButton />
             <form
               action={async () => {
                 "use server";
