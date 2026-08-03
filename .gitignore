@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# gbrain brain repo — contains real ingested Gmail/Drive content, never commit
+/brain/

@@ -82,9 +82,37 @@ If gbrain hosting eats too much time, fallback is to demo locally with
 best-effort, not required — success criteria in SPEC.md §9 only requires a
 "reliably local-runnable" UI at minimum.
 
-**Current state:** Next.js app scaffolded and building at repo root. gbrain
-cloned to a scratch location for reference (not yet installed — needs Bun,
-which is not yet installed on this machine). Next: install Bun, install
-gbrain, `gbrain init --pglite` locally for dev, pick a remote host
-(Railway vs Fly.io) for the demo deployment, then start Google Cloud OAuth
-setup for Gmail + Drive scopes.
+**Current state:** Next.js app scaffolded and building at repo root. Bun
+1.3.14 and gbrain 0.42.72.1 installed. Local PGLite brain initialized at
+`D:\Projects\PROJECT_MAIN_AI\brain` (config/DB live in `~/.gbrain`, which is
+normal for gbrain — the brain repo directory in the project is where our
+ingested markdown pages will live). `/brain/` added to `.gitignore` since
+it will hold real personal Gmail/Drive content once ingestion starts —
+should never be pushed to the public GitHub repo.
+
+**Embedding provider setup (Gemini):** User chose Google Gemini for
+embeddings. Two gotchas hit and resolved:
+1. `setx` writes to the registry but does not propagate to already-running
+   shells (this agent's Bash/PowerShell tool sessions started before the
+   `setx` call). Workaround: read the value out of the registry
+   (`[System.Environment]::GetEnvironmentVariable(name, "User")`) inside
+   each command that needs it, without ever printing the value.
+2. The correct config is model `google:gemini-embedding-001` (not
+   `text-embedding-004`, which doesn't exist on the embedContent endpoint)
+   and env var `GOOGLE_GENERATIVE_AI_API_KEY` (not `GEMINI_API_KEY` — gbrain
+   doesn't recognize that name). Also: `gbrain config set embedding_model`
+   is rejected as a no-op by the CLI itself ("file-plane field that sizes
+   the schema") — changing it requires wiping `~/.gbrain/brain.pglite` and
+   re-running `gbrain init --pglite --embedding-model ...`, safe here only
+   because the brain was still empty.
+
+`gbrain doctor` now passes the embedding_provider check cleanly. Remaining
+warnings (no embeddings yet, no skills dir, no ANTHROPIC_API_KEY for
+gbrain's internal chat features) are expected/non-blocking — we're using
+gbrain only for `search` (retrieval), doing synthesis and cross-source
+reasoning with Claude in our own Next.js app, not gbrain's built-in `think`/
+`dream`/`agent` commands.
+
+**Next:** Google Cloud OAuth setup for Gmail + Drive scopes, then start the
+ingestion pipeline (Gmail/Drive API clients → normalize → write markdown
+pages into `brain/` → `gbrain sync`).
