@@ -245,3 +245,54 @@ explicit go-ahead each time rather than fully automatic pushing.
 commit. Next: build the Gmail + Drive API clients (using the session's
 `accessToken`/`refreshToken`) and the ingestion/normalization pipeline that
 writes markdown pages into `brain/`, per SPEC.md §4.
+
+---
+
+## 2026-08-04 — Gmail + Drive API clients built and verified against real data
+
+**Implementation:**
+- [`src/auth.ts`](src/auth.ts) — added automatic access-token refresh in the
+  `jwt` callback (Google access tokens expire in ~1hr; ingestion needs to
+  keep working past that). Refreshes ~60s before expiry using the stored
+  refresh token via a direct POST to Google's token endpoint (no extra
+  dependency needed). Surfaces `MissingRefreshToken` /
+  `RefreshAccessTokenError` on `session.error` so callers can detect a dead
+  session instead of silently failing.
+- [`src/lib/google/gmail.ts`](src/lib/google/gmail.ts) — `searchMessages` /
+  `listRecentMessages`. Parses Gmail's MIME payload tree, prefers
+  `text/plain`, falls back to `text/html` stripped to text. Extracts
+  subject/from/to/cc/date/snippet/attachments (filename + attachmentId, not
+  content — attachment bytes fetched on demand later if a query needs them).
+- [`src/lib/google/drive.ts`](src/lib/google/drive.ts) — `searchFiles` /
+  `listRecentFiles`. Exports Google Docs as plain text via the Drive export
+  endpoint; reads `text/*` and JSON files directly; binary formats (PDF,
+  Sheets, Slides, images) are skipped for now — out of scope per SPEC.md,
+  metadata (name/owner/dates) still indexed.
+- Test routes `/api/ingest/gmail` and `/api/ingest/drive` (session-gated)
+  to verify against real data before building the full normalizer.
+
+**Bug hit and fixed:** first live Gmail test returned readable JSON but
+HTML-only email bodies were full of raw CSS (`.container { width: 100%
+!important; ... }`) and HTML entities (`&#8199;`) — the naive
+strip-tags-with-regex fallback didn't remove `<style>`/`<script>` blocks or
+decode entities. Added `htmlToText()`: strips style/script/comment blocks
+before stripping remaining tags, then decodes named + numeric HTML
+entities. Re-verified live — bodies now read as clean plain text. This
+mattered enough to fix immediately rather than deferring, since gbrain's
+retrieval/synthesis quality depends directly on ingested text being clean.
+
+**Verified live (real data, both fixes confirmed by the user):**
+- Gmail: real inbox messages (shortlisted-candidate email, internship spam,
+  etc.) returned with clean subject/from/to/date/body text matching the
+  actual Gmail UI.
+- Drive: real files returned including the user's own SkillLayer take-home
+  assignment Google Doc (content correctly exported) and an unrelated
+  internship JD doc — confirms Drive export path and content extraction
+  both work end-to-end.
+
+**Current state:** Both connector clients work against real, authenticated
+data with clean text extraction. Phase 1 remaining piece: the
+normalizer (raw Gmail/Drive results → `BrainDocument` → markdown page with
+frontmatter) and writing those pages into `brain/`, then `gbrain sync` to
+index them — this is what turns "we can fetch data" into "gbrain can
+retrieve it."
