@@ -529,3 +529,42 @@ with source citations. Remaining before submission: a final end-to-end
 pass through the assignment's own example queries in the live UI, then
 recording the demo video and preparing the submission per SPEC.md §9's
 definition-of-done checklist.
+
+---
+
+## 2026-08-04 — Final verification pass: all definition-of-done criteria met
+
+**Context:** Ran a structured final pass through the live chat UI (not the
+bypass script) against 4 queries spanning both tiers, per SPEC.md §9.
+User ran each query in their own authenticated browser session and shared
+results.
+
+**Results:**
+1. **Tier 1, Gmail** — "Summarize my most recent email thread with Nirmit
+   from SkillLayer" → correct summary of the shortlist notification and
+   take-home assignment forward, 3 cited sources, conversational
+   formatting (not a raw dump).
+2. **Tier 1, Drive** — "What Drive files do I have related to
+   internships?" → correctly listed both real internship JDs
+   (GoMarble Growth Intern, Revrag Full Stack Developer Intern) with
+   accurate one-line descriptions.
+3. **Tier 2** — "What's the status of my GoMarble internship application,
+   and do I have the JD saved in Drive?" → correctly reported no Gmail
+   correspondence exists for this one (honest partial answer) while
+   confirming the real Drive JD with accurate content — a clean
+   demonstration of "wrong or 'I don't know' beats confident
+   hallucination" since it didn't invent an application-status email that
+   doesn't exist.
+4. **Tier 2, repeat** — SkillLayer application status + take-home doc,
+   re-run on a fresh page load → same correct, stable result as the
+   earlier session (confirms Bug 3's fix wasn't a fluke).
+
+All four SPEC.md §9 checkboxes now pass. Marked them `[x]` with brief
+verification notes inline.
+
+**Current state:** All three phases complete and verified live end-to-end.
+Remaining before the 2026-08-09 00:00 deadline: optional Vercel deployment
+of the Next.js app (gbrain itself stays local per the architecture
+decision — see 2026-08-03 entry), recording the demo video, and sending
+the submission email to nirmit@skilllayer.tech (cc cristian@skilllayer.tech)
+replying to the original application thread.

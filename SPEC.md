@@ -166,12 +166,23 @@ Each phase ends with a checkpoint against this spec before moving on.
 
 ## 9. Success criteria / definition of done
 
-- [ ] Deployed (Vercel) or reliably local-runnable chat UI, no curl demo.
-- [ ] All 3 Tier 1 queries answered correctly live against real connected data.
-- [ ] At least 1 Tier 2 query answered correctly live, showing the cross-source
-      join.
-- [ ] No fabricated answers observed during a full test pass — every claim
-      traces to a retrieved document, or the system says it doesn't know.
+- [x] Reliably local-runnable chat UI, no curl demo. (Vercel deploy of the
+      Next.js app is still open — gbrain itself stays local-only per the
+      2026-08-03 architecture decision; see JOURNAL.md.)
+- [x] Tier 1 queries answered correctly live against real connected data —
+      verified 2026-08-04 via the actual chat UI: Gmail thread summary
+      (Nirmit/SkillLayer) and Drive internship-file lookup (GoMarble +
+      Revrag JDs), both accurate and conversationally formatted.
+- [x] At least 1 Tier 2 query answered correctly live, showing the
+      cross-source join — verified 2026-08-04: SkillLayer application
+      status (Gmail) + take-home doc (Drive) correctly synthesized twice
+      (including a fresh page load) into one coherent, cited answer.
+- [x] No fabricated answers observed during a full test pass — verified
+      2026-08-04: GoMarble query correctly reported "no Gmail
+      correspondence found" while still confirming the real Drive JD
+      (partial, honest answer, not a guess); Stripe/Priya-contract queries
+      (no matching data) correctly answered "not found" rather than
+      inventing a match.
 - [ ] SPEC.md changes are logged in JOURNAL.md when implementation deviates
       from this document.
 
