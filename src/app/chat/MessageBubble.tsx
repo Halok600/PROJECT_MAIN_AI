@@ -1,5 +1,6 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import { SourceChip, type Source } from "./SourceChip";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 
 const markdownComponents: Components = {
   a: ({ href, children }) => (
@@ -73,7 +74,7 @@ export function MessageBubble({
             <ReactMarkdown components={markdownComponents}>{text}</ReactMarkdown>
           </div>
         ) : pending ? (
-          <span className="font-mono text-lg text-[var(--neon-cyan)] glow-text-cyan">▌</span>
+          <ThinkingIndicator />
         ) : null}
 
         {!isUser && sources.length > 0 && (

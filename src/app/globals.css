@@ -150,3 +150,72 @@ body > div {
 .clip-corner-sm {
   clip-path: var(--clip-corner-sm);
 }
+
+/* ---------------------------------------------------------------------
+   "Thinking" indicator — a sequential-pulse scanner bar + pulsing label,
+   replacing the old hard blink. Pure CSS keyframes, no JS animation loop.
+--------------------------------------------------------------------- */
+@keyframes thinking-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes thinking-bar-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+    opacity: 0.3;
+    box-shadow: none;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+    box-shadow: var(--glow-cyan);
+  }
+}
+
+@keyframes thinking-label-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 1.5em;
+  animation: thinking-fade-in 0.3s ease-out;
+}
+
+.thinking-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+}
+
+.thinking-bar {
+  width: 3px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--neon-cyan);
+  transform-origin: center;
+  animation: thinking-bar-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-label {
+  font-family: var(--font-terminal), monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--neon-cyan);
+  animation: thinking-label-pulse 1.6s ease-in-out infinite;
+}

@@ -1008,3 +1008,39 @@ ceiling) and the infra-level fix (Singapore region) are needed together —
 neither alone brought total latency reliably under the timeout. Verified
 via direct script, not yet reverified through the actual deployed Vercel
 app end-to-end (pending Vercel env var update + redeploy + live retest).
+
+---
+
+## 2026-08-05 — Vercel + Singapore fix confirmed live; polished loading state
+
+**Verified live:** user updated Vercel's `GBRAIN_REMOTE_URL` to the
+Singapore Render service, redeployed, and confirmed a real chat query
+("Summarize Work at Adobe at a stipend mail") completed correctly on the
+deployed app — response, formatting, and sources footnote all working.
+Also confirmed local dev works identically after restarting with the
+updated `.env.local`, since it's the exact same code path. This closes
+out the Vercel deployment + latency work.
+
+**UI polish — replaced the loading indicator.** User asked for the
+"thinking" state (previously a plain blinking `▌` block) to be replaced
+with a smoother, on-theme animation: a sequential-pulse scanner bar
+(5 thin cyan bars, staggered `animation-delay` creating a wave via CSS
+`@keyframes`, glowing at peak using the existing `--glow-cyan` shadow
+token) next to a `[ PROCESSING_DATA... ]` label with a smooth opacity
+pulse, the whole thing fading in via a `thinking-fade-in` keyframe rather
+than popping in abruptly. Pure CSS (`@keyframes` + `animation-delay`
+stagger), no JS animation loop or interval, per the explicit ask.
+New [`ThinkingIndicator.tsx`](src/app/chat/ThinkingIndicator.tsx)
+component, styles added to
+[`globals.css`](src/app/globals.css), wired into
+[`MessageBubble.tsx`](src/app/chat/MessageBubble.tsx) in place of the old
+inline `▌` span.
+
+**Verified:** `tsc --noEmit`, `eslint src`, `next build` all clean; no
+console errors on a live page load. User confirmed visually: "Looks
+clean and good."
+
+**Current state:** App is fully deployed, functionally verified end to
+end (OAuth, ingestion, remote gbrain search, Gemini reasoning, citations),
+and now visually polished. All work from today's Vercel deployment push
+is complete.
