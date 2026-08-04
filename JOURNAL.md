@@ -568,3 +568,130 @@ of the Next.js app (gbrain itself stays local per the architecture
 decision — see 2026-08-03 entry), recording the demo video, and sending
 the submission email to nirmit@skilllayer.tech (cc cristian@skilllayer.tech)
 replying to the original application thread.
+
+---
+
+## 2026-08-04 — Cyberpunk UI overhaul (two passes) + real markdown/link fixes
+
+**Context:** After the working chat UI was verified, user requested a full
+visual redesign: cyberpunk/Night City terminal aesthetic, clickable source
+hyperlinks, and a code cleanup pass. Delivered in two rounds — the second
+in response to feedback that the first pass was too visually minimal.
+
+**Real bugs fixed alongside the reskin (not just styling):**
+1. **`**bold**` rendered as literal asterisks.** The original Chat.tsx just
+   dumped raw assistant text with `whitespace-pre-wrap` — never parsed
+   markdown at all, so the model's own `**Status:**` / bullet-list output
+   showed asterisks literally. Fixed by adding `react-markdown` with custom
+   component overrides (bold, links, lists, code) instead of raw text.
+2. **Source citations had no real links.** `search_gmail`/`search_drive`
+   tool output only ever returned title/score/snippet — never the actual
+   Gmail thread / Drive `webViewLink` stored in each page's frontmatter.
+   gbrain's search results don't carry frontmatter (chunked body text
+   only), so fixed at the source: `searchBrain()` in `gbrain-cli.ts` now
+   reads each hit's `brain/<slug>.md` file directly off disk after search
+   returns, parses the YAML frontmatter, and attaches the real `url`. The
+   system prompt now instructs the model to cite using markdown link
+   syntax when a url is present, so citations in the answer text AND the
+   sources footnote are both genuinely clickable, opening the real
+   Gmail/Drive item.
+
+**Round 1 — base cyberpunk theme:**
+- Fixed neon color system (cyan/pink/yellow) as CSS custom properties,
+  glow utilities (multi-layer text/box-shadow), Share Tech Mono terminal
+  font, subtle static scanline/grid background (deliberately static, not
+  animated — flashing/scrolling backgrounds are an accessibility hazard).
+- Split the monolithic Chat.tsx into modular pieces:
+  `src/app/chat/{Chat,MessageBubble,SourceChip,extractSources}` — matches
+  the "clean modular structure" ask.
+
+**Round 2 — user feedback "too small/minimal, want it chunkier + icons":**
+Notably, the user's feedback screenshot showed a UI with Notion/Calendar
+connectors, a "Query History" panel, and a route (`/personal-brain-ui`)
+that don't exist anywhere in this codebase — evidently a separate
+reference mockup, not actual output of this app. Flagged this to the user
+and deliberately did NOT add fake Notion/Calendar connector chrome, since
+we don't have those integrations — showing a "Disconnected" badge for a
+service we never built would misrepresent the system's real capabilities
+during the graded demo. Implemented the explicit, real requests instead:
+- Scaled up base font size (18px root), all padding/buttons/input chunkier.
+- Locked the palette to the user's exact specified hex values (`#0a0a0c`
+  bg, `#00f0ff` cyan, `#fcee0a` yellow, `#ff003c` pink) with much stronger
+  3-layer glow shadows.
+- Added `lucide-react` icons (Mail for Gmail, HardDrive for Drive) with
+  neon drop-shadow tint, replacing plain text status labels.
+- Deeper `clip-path` cut corners on all panels/buttons/chips.
+- Source links: cyan by default, glow yellow on hover, per spec.
+
+**Also restructured the layout during round 2** (full-viewport sidebar +
+chat split, replacing the earlier centered-box layout) — `Sidebar.tsx`
+(connection status, live pulsing "active tool" indicators sourced from the
+in-flight tool-call parts of the last message, sync/disconnect) +
+`Workspace.tsx` (top-level client shell owning `useChat` state) +
+`Chat.tsx` (message list + input, now a pure props-driven presentational
+component). `src/app/actions.ts` added as a standalone `"use server"`
+module for the disconnect action, so the client-side `Workspace` tree can
+import a server action directly without prop-drilling it down from a
+server component.
+
+**Lint caught 3 genuine React correctness bugs during round 2's
+refactor** (this project's eslint config includes the newer React
+Compiler-aligned purity rules): calling `Date.now()` inside a JSX prop
+expression during render (impure), writing to a `ref.current` during
+render to shadow state for an effect closure (also impure — effects
+should read fresh state via the functional `setState` updater instead),
+and calling `setState` directly inside a bare `useEffect` body (flagged
+as an unnecessary cascading-render pattern). Fixed by moving all
+`Date.now()` timestamp-stamping into genuine event callbacks instead of
+render/effects: `onFinish` on `useChat` (fires once per completed
+assistant response) stamps the assistant message, and the chat submit
+handler stamps the user message immediately using a client-generated
+`messageId` passed through to `sendMessage`.
+
+**Verified:** `tsc --noEmit`, `eslint src`, and `next build` all clean
+after every round; no console errors in a live page load. Full manual
+click-through (login screen, sidebar, live chat with tool activity and
+clickable sources) still pending user confirmation in their own browser.
+
+**Current state:** UI overhaul complete pending the user's final visual
+sign-off. All backend/reasoning functionality from the earlier verified
+pass is untouched — this was a frontend-only change.
+
+---
+
+## 2026-08-04 — Bug: sending a message crashed with "message with id ... not found"
+
+**Context:** User tried the new UI live and hit a Next.js runtime error
+overlay immediately on send: `message with id <uuid> not found`.
+
+**Root cause:** Misread `useChat().sendMessage`'s `messageId` option. Its
+actual contract (confirmed from `node_modules/ai/dist/index.d.ts`'s doc
+comment: "If a messageId is provided, the message will be replaced.") is
+to **replace an existing message**, not to assign an id to a brand-new
+one. The earlier timestamp-tracking implementation generated a fresh
+`crypto.randomUUID()` and passed it as `messageId` hoping to pre-assign
+the new user message's id — instead the SDK tried to find-and-replace a
+message with that id, found none, and threw.
+
+**Fix:** Dropped the fabricated-id approach entirely. User message
+timestamps are now tracked by **send order**, not id: `Workspace.tsx`
+keeps a plain `number[]` (`userTimestamps`), appending `Date.now()` in the
+submit handler (a real event callback) before calling
+`chat.sendMessage({ text })` with no `messageId`. `Chat.tsx` matches each
+rendered user message to its timestamp by computing
+`userMessageIds.indexOf(message.id)` against the list of user message ids
+in the current `messages` array — no fabricated id needed anywhere.
+Assistant timestamps are unaffected (they already used the real id
+supplied by `onFinish`, which was never the problem).
+
+**Lint caught another purity violation while fixing this:** an IIFE
+computing render output used a mutable `let userIndex = -1` counter
+incremented while mapping — flagged as "cannot reassign variable after
+render completes" by the same React Compiler-aligned purity rules from
+the earlier refactor. Rewrote without any mutable state: build an
+immutable `userMessageIds` array first via `.filter().map()`, then look
+up each user message's position with `.indexOf()` — O(n²) for a chat
+transcript that's realistically dozens of messages, not worth optimizing.
+
+**Verified:** `tsc --noEmit`, `eslint src`, `next build` all clean.
+Live click-through re-requested from the user.

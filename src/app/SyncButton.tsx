@@ -10,8 +10,10 @@ type SyncResult = {
   syncLog: string;
 };
 
+type SyncState = "idle" | "loading" | "done" | "error";
+
 export function SyncButton() {
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [state, setState] = useState<SyncState>("idle");
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,25 +33,25 @@ export function SyncButton() {
   }
 
   return (
-    <div className="flex w-full flex-col items-center gap-3">
+    <div className="flex flex-col gap-2">
       <button
         type="button"
         onClick={handleSync}
         disabled={state === "loading"}
-        className="h-10 rounded-full bg-foreground px-5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
+        className="clip-corner-sm w-full border-2 border-[var(--neon-cyan)]/70 bg-[var(--bg-panel-raised)] px-4 py-3 font-mono text-sm font-bold tracking-wide text-[var(--neon-cyan)] transition-shadow hover:glow-border-cyan disabled:opacity-40 disabled:hover:shadow-none"
       >
-        {state === "loading" ? "Syncing…" : "Re-sync Gmail + Drive"}
+        {state === "loading" ? "SYNCING..." : "RE-SYNC GMAIL + DRIVE"}
       </button>
 
       {state === "done" && result && (
-        <p className="text-xs text-zinc-500 dark:text-zinc-500">
-          Ingested {result.gmailCount} email(s) + {result.driveCount} file(s), wrote{" "}
-          {result.pagesWritten} page(s){result.committed ? ", synced to brain" : " (no changes)"}.
+        <p className="font-mono text-xs leading-snug text-[var(--text-dim)]">
+          {result.gmailCount} email(s) + {result.driveCount} file(s) → {result.pagesWritten} page(s)
+          {result.committed ? ", synced" : " (no changes)"}.
         </p>
       )}
 
       {state === "error" && (
-        <p className="text-xs text-red-500">{error}</p>
+        <p className="font-mono text-xs leading-snug text-[var(--neon-pink)]">{error}</p>
       )}
     </div>
   );

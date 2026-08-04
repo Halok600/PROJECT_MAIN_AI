@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 
 const execFileAsync = promisify(execFile);
 
@@ -74,7 +76,27 @@ export type BrainSearchHit = {
   title: string;
   score: number;
   snippet: string;
+  url?: string;
 };
+
+/**
+ * gbrain's search results don't include frontmatter (only chunked body
+ * text), so the real Gmail/Drive URL we wrote into each page's frontmatter
+ * (see markdown.ts) has to be read back off disk directly. Best-effort:
+ * a missing/unparseable file just means no link, not a failed search.
+ */
+async function readPageUrl(slug: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(path.join(BRAIN_REPO_DIR, `${slug}.md`), "utf-8");
+    const frontmatterMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch) return undefined;
+
+    const frontmatter = parseYaml(frontmatterMatch[1]) as { url?: string };
+    return frontmatter.url;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * `gbrain search` (plain CLI) has no --json output; `gbrain call <tool> <json>`
@@ -113,8 +135,12 @@ export async function searchBrain(
       snippet: r.chunk_text ?? "",
     }));
 
-    const filtered = type ? hits.filter((h) => h.type === type) : hits;
-    return filtered.slice(0, limit);
+    const filtered = (type ? hits.filter((h) => h.type === type) : hits).slice(0, limit);
+
+    const withUrls = await Promise.all(
+      filtered.map(async (hit) => ({ ...hit, url: await readPageUrl(hit.slug) })),
+    );
+    return withUrls;
   } catch (err) {
     console.error("Failed to parse gbrain call search output", err, stdout);
     return [];

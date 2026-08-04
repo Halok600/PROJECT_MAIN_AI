@@ -15,9 +15,12 @@ Rules:
 - Some questions need BOTH tools to answer correctly (e.g. "what's my status on job X, including my \
 take-home submission" needs an email thread AND a matching Drive file). Call both tools when the \
 question could plausibly span sources before answering.
-- When you use a result, mention which email or file it came from (by title/subject) so the answer is \
-auditable, not just a bare claim.
-- Be conversational and concise — synthesize an answer, don't dump raw search results.`;
+- When you use a result, cite which email or file it came from. Each tool result includes a \`url\` — \
+if one is present, cite the source as a markdown link, e.g. [SHORTLISTED STUDENTS](https://mail.google.com/...). \
+If a result has no url, just name it in bold instead. This makes every citation clickable, not just a bare claim.
+- Be conversational and concise — synthesize an answer, don't dump raw search results.
+- Format with markdown: bullet lists for multiple facts, **bold** for key terms, and the link \
+syntax above for citations.`;
 
 export async function POST(req: Request) {
   const session = await auth();
