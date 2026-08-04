@@ -3,7 +3,12 @@ import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 
 import { auth } from "@/auth";
 import { brainTools } from "@/lib/query/tools";
 
-export const maxDuration = 30;
+// 60s is the max Vercel's Hobby plan allows. Needed as headroom: the model
+// can call search_gmail/search_drive multiple times per turn, each one a
+// network round-trip to the remote gbrain server (Render) — see
+// gbrain-remote.ts's MAX_URL_LOOKUPS cap (JOURNAL.md 2026-08-05) for the
+// matching fix on the latency side, not just the ceiling.
+export const maxDuration = 60;
 
 const SYSTEM_PROMPT = `You are Personal Brain, a conversational agent over the user's own Gmail and \
 Google Drive, already ingested into a searchable brain.

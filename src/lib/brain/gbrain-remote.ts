@@ -100,7 +100,21 @@ export async function searchBrain(
 
   const filtered = (type ? hits.filter((h) => h.type === type) : hits).slice(0, limit);
 
-  return Promise.all(filtered.map(async (hit) => ({ ...hit, url: await getPageUrl(hit.slug) })));
+  // Each URL lookup is a separate round-trip to the remote gbrain server.
+  // The model can call search_gmail/search_drive several times per turn
+  // (observed: 3-4x with rephrased queries), and each call used to enrich
+  // every one of its results — enough round-trips stacked up to blow past
+  // Vercel's function timeout entirely. Snippets (already in the single
+  // search response, no extra cost) still cover every hit for grounding;
+  // only the top few most-relevant results get a clickable citation link.
+  const MAX_URL_LOOKUPS = 3;
+  const enriched = await Promise.all(
+    filtered.map(async (hit, i) => ({
+      ...hit,
+      url: i < MAX_URL_LOOKUPS ? await getPageUrl(hit.slug) : undefined,
+    })),
+  );
+  return enriched;
 }
 
 export const searchGmail = (query: string, limit = 10) => searchBrain(query, { limit, type: "email" });

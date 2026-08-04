@@ -932,3 +932,79 @@ search all confirmed working in earlier steps; the ingestion-button fix
 above is committed and pushed, awaiting Vercel's auto-redeploy (GitHub
 integration) and a final live click-through to confirm the sidebar shows
 the correct state on production.
+
+---
+
+## 2026-08-05 — Chat timing out on Vercel; root cause was Render's region
+
+**Context:** User confirmed the ingestion-button fix deployed correctly,
+but then hit a real bug testing chat live: a query just hung forever
+("BRAIN · 12:17 AM" with an empty pending cursor, no response ever
+arrived).
+
+**Diagnosis:** User checked Vercel's Runtime Logs (same technique as the
+Render embedding-dimension bug earlier) and found the real error:
+`Vercel Runtime Timeout Error: Task timed out after 30 seconds` on
+`/api/chat`, repeated across multiple requests. (Also visible in the same
+log: `/api/ingest/sync` correctly returned 501 — confirming the earlier
+fix worked.)
+
+**First fix attempt — reduce URL-lookup round-trips.** Hypothesis: each
+`get_page` call (used to fetch the citation URL) is a separate network
+round-trip to the remote gbrain server, and the model can call
+`search_gmail`/`search_drive` multiple times per turn with rephrased
+queries (observed up to 4x in earlier testing) — each call enriching
+every one of its results. Capped URL lookups to the top 3 results by
+relevance per call in
+[`gbrain-remote.ts`](src/lib/brain/gbrain-remote.ts) (snippets, already
+free since they come from the single search response, still cover every
+hit for grounding — only the citation *link* is capped). Also bumped
+`/api/chat`'s `maxDuration` from 30 to 60 (Vercel Hobby plan's max) as
+headroom.
+
+**Verified the fix was insufficient on its own.** A throwaway timed test
+script (`generateText` with the same tools, instrumented with per-call
+timing) showed the real query — "what are the skills from my
+Resume_2026_APRIL" — still took **59-70 seconds** end to end even with
+the URL-lookup cap. Per-call timing logs showed why: the `search` MCP
+call itself was taking **10-25 seconds per call**, completely dominating
+the total — `get_page` calls were only ~2s each and already capped.
+
+**Root cause — Render (Oregon, US West) talking to Supabase (Sydney,
+ap-southeast-2) on every single query.** Confirmed by having the user
+check Render's Settings → Region. A raw curl timing sweep across
+different `limit` values showed latency didn't correlate with result
+count (5 results was *slower* than 32), ruling out overfetch size as the
+driver and pointing at fixed network/infra latency instead — consistent
+with a full US↔Australia round trip (DB query + the Gemini embedding API
+call) on every request.
+
+**Render doesn't support changing an existing service's region** (```
+"Render doesn't currently support changing the region for an existing
+service or database. Instead, create a new service..." ```) — created a
+second Render service (`gbrain-server`, same Dockerfile, same env vars)
+in **Singapore** (closest available Render region to Sydney) rather than
+Oregon. Re-verified timing directly: raw `search` calls dropped from
+10-25s to ~7s once warm (first call after deploy was still ~15-17s —
+cold start), and the same full end-to-end integration test that took
+59-70s against Oregon completed in **30.8s** against Singapore —
+comfortably under the 60s ceiling.
+
+**Note:** the new service's hostname is `ersonal-brain-gbrain-sg.onrender.com`
+(missing the leading "p") — a naming typo the user made when creating it
+in Render, not a copy-paste error (confirmed by checking the exact string
+shown in Render's own UI). Harmless since it's just a hostname, but worth
+remembering if this needs to be referenced again — it is NOT a typo to
+"fix."
+
+**Updated:** `.env.local`'s `GBRAIN_REMOTE_URL` now points at the
+Singapore service. Vercel's `GBRAIN_REMOTE_URL` env var needs the same
+update (user to do next), followed by a redeploy and final live retest.
+The original Oregon Render service is still running but unused — fine to
+delete later, not urgent (free tier, no cost either way).
+
+**Current state:** Both the code-level fix (capped URL lookups, 60s
+ceiling) and the infra-level fix (Singapore region) are needed together —
+neither alone brought total latency reliably under the timeout. Verified
+via direct script, not yet reverified through the actual deployed Vercel
+app end-to-end (pending Vercel env var update + redeploy + live retest).
