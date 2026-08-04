@@ -444,3 +444,88 @@ the chat UI itself (Phase 3) — right now `/api/chat` exists and works, but
 there's no frontend calling it yet (the landing page still only has the
 re-sync button). Next: Phase 3, wire a chat UI to `/api/chat` using the AI
 SDK's `useChat` hook.
+
+---
+
+## 2026-08-04 — Phase 3: chat UI built; hit and fixed 3 real bugs live
+
+**Implementation:**
+- Installed `@ai-sdk/react` (separate package from `ai` in this SDK
+  version — `useChat` isn't exported from `ai` itself).
+- [`src/app/Chat.tsx`](src/app/Chat.tsx) — client component: message list,
+  streaming assistant text, input box, and a sources footnote per message
+  built from the `tool-search_gmail`/`tool-search_drive` UI message parts
+  (`state === "output-available"`).
+- [`src/app/page.tsx`](src/app/page.tsx) — restructured the authenticated
+  view into a proper app shell (header with email/re-sync/disconnect, full
+  chat below) instead of the small centered auth card, which only made
+  sense for the pre-chat state.
+
+**Bug 1 (real, user-facing) — duplicate React keys crashed the page.**
+First live test: the assistant response was invisible, only sources chips
+showed, then the page crashed. Console: "Encountered two children with the
+same key `search_gmail-emails/gmail-...`". Root cause: the model often
+calls the same search tool multiple times per turn with overlapping
+results, so naively flattening every tool-result across every part
+produces duplicate slugs — which also meant the crash was hiding a
+perfectly good answer underneath the Next.js dev error overlay. Fixed
+`extractSources` in Chat.tsx to dedupe by slug (keeping the best score),
+drop anything below a 0.5 relevance floor, sort by score, and cap at 6 —
+this also fixed a second real UX problem (a wall of irrelevant promotional
+emails in the footnote from broad low-relevance tool calls).
+
+**Bug 2 (real, would have blocked the live demo) — the model alias
+resolves to a model with a 20-request/DAY free quota.** Re-running the
+exact same query that worked earlier in a plain script now failed via the
+chat UI with no visible error (just "couldn't find it"), and a direct
+repro hit `429 RESOURCE_EXHAUSTED`: `gemini-flash-latest` currently
+resolves to `gemini-3.6-flash`, whose free tier is capped at **20
+requests/day** — one multi-step tool-calling chat turn can burn 3-6 of
+those alone. Probed several other model IDs directly against the
+`generateContent` endpoint to find one with real headroom on this key:
+`gemini-2.0-flash` came back `limit: 0` (this key has zero free quota for
+it, not just exhausted), `gemini-2.5-flash-lite` is blocked entirely for
+new users (404), `gemini-2.0-flash-lite` also 429'd immediately.
+`gemini-flash-lite-latest` was the one model that actually worked.
+Switched `/api/chat` to it and documented why in a code comment so a
+future model swap doesn't reintroduce this blindly.
+
+**Bug 3 (real, correctness-affecting) — the model correctly refused to
+confirm a match it couldn't literally verify, because we withheld the
+evidence.** With the lite model, "what's my status on the SkillLayer
+application" reproducibly answered "couldn't find any information" *despite*
+`search_gmail` returning the exact right emails at 0.86 top score. Root
+cause: our `search_gmail`/`search_drive` tool output only returns
+title/score/body-snippet — never the `participants` frontmatter field. The
+"SHORTLISTED STUDENTS" email's body never restates "SkillLayer" (it just
+says "shortlisted for the MC Round"); that context only exists as the
+sender's domain (`nirmit@skillayer.tech`) in frontmatter, which gbrain
+chunks from body text only — frontmatter never reaches search results or
+the model. The lite model, correctly per our own grounding instructions,
+declined to assert a connection it had no textual evidence for. Fixed at
+the source rather than papering over it in the prompt: added a metadata
+header (title + participants + attachments) into the actual page BODY in
+[`markdown.ts`](src/lib/brain/markdown.ts), so this information is both
+indexed for search and visible to the model in results. Required a full
+re-ingestion (all 98 pages rewritten with the new body format) — the
+existing pipeline handled this cleanly since writes are idempotent by id
+and gbrain's sync only re-embeds changed content.
+
+**Verified live end-to-end after both fixes, via the real chat UI (not the
+bypass script) with the user's own session:** "What's my status on the
+SkillLayer application, and do I have the take-home assignment document in
+my Drive?" now correctly synthesizes shortlist status (from 2 emails) +
+the actual Drive document (title, contents, deadline) into one coherent
+answer, with a clean 3-item sources footnote (2 emails + 1 Drive doc, no
+duplicates, no irrelevant junk). Also re-verified via script:
+Tier 1 (Stripe failed-payment email — correctly "not found", no such email
+exists) and the Priya-contract grounding case (correctly "not found") both
+still hold with the new model + pipeline.
+
+**Current state:** All three phases are functionally complete and verified
+against real, live data through the actual UI: OAuth, ingestion, gbrain
+storage, Gemini-based retrieval + reasoning, and a working chat frontend
+with source citations. Remaining before submission: a final end-to-end
+pass through the assignment's own example queries in the live UI, then
+recording the demo video and preparing the submission per SPEC.md §9's
+definition-of-done checklist.

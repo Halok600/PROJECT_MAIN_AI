@@ -29,7 +29,22 @@ export function brainDocumentToMarkdown(doc: BrainDocument): string {
     attachments: doc.attachments.map((a) => a.name),
   });
 
-  return `---\n${frontmatter}---\n\n${doc.body}\n`;
+  // Participants/source/attachments also live in frontmatter above, but gbrain's
+  // search only returns chunked BODY text to callers — frontmatter never reaches
+  // the model or the keyword/vector index. An email whose body text never repeats
+  // the sender's domain (most don't) is then unfindable/unverifiable for a query
+  // like "SkillLayer emails" even though the sender IS nirmit@skillayer.tech.
+  // Restating the key metadata as visible body text fixes both retrieval recall
+  // and the model's ability to ground an answer in it. See JOURNAL.md 2026-08-04.
+  const metadataHeader = [
+    `**${doc.title}**`,
+    `Participants: ${doc.participants.join(", ") || "(none)"}`,
+    doc.attachments.length > 0 ? `Attachments: ${doc.attachments.map((a) => a.name).join(", ")}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return `---\n${frontmatter}---\n\n${metadataHeader}\n\n---\n\n${doc.body}\n`;
 }
 
 export function brainDocumentPagePath(doc: BrainDocument): string {

@@ -28,7 +28,12 @@ export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = streamText({
-    model: google("gemini-flash-latest"),
+    // "gemini-flash-latest" resolved to "gemini-3.6-flash" (20 req/DAY free
+    // quota) and "gemini-2.0-flash" has ZERO free quota on this key — both
+    // verified by direct API probing. "gemini-flash-lite-latest" is the one
+    // model confirmed to actually have usable free-tier quota right now.
+    // See JOURNAL.md 2026-08-04.
+    model: google("gemini-flash-lite-latest"),
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
     tools: brainTools,
