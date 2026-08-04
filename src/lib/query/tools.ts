@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { searchGmail, searchDrive } from "@/lib/brain/gbrain-cli";
+import { searchGmail, searchDrive } from "@/lib/brain/gbrain-remote";
 
 function formatHits(hits: Awaited<ReturnType<typeof searchGmail>>) {
   if (hits.length === 0) {

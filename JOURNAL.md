@@ -695,3 +695,110 @@ transcript that's realistically dozens of messages, not worth optimizing.
 
 **Verified:** `tsc --noEmit`, `eslint src`, `next build` all clean.
 Live click-through re-requested from the user.
+
+---
+
+## 2026-08-04 — Vercel deployment prep: migrated gbrain to Supabase + remote MCP
+
+**Context:** User asked to deploy to Vercel, with an explicit ask to keep
+API keys out of the public repo. Flagged upfront that the current
+implementation can't run on Vercel as-is: `/api/chat` and
+`/api/ingest/sync` shell out to a locally-installed Windows `gbrain.exe`
+binary and read/write a local git repo (`brain/`) — none of which exist on
+Vercel's stateless Linux serverless functions. Presented three options
+(skip Vercel / build real remote-gbrain hosting / UI-only broken-demo
+shell); user chose to build it properly.
+
+**Scope decision:** Ingestion stays local-only (already fully built,
+inherently about reading the user's private Gmail/Drive — arguably
+shouldn't be triggerable from a public URL anyway). What moves remote is
+the shared data store and the query/search path, so both local dev and the
+eventual Vercel deployment read the same brain.
+
+**Step 1 — Supabase.** User created a Supabase project, enabled the
+`vector` extension (required — gbrain's schema migrations refuse to run
+without it), and got both the Transaction pooler (port 6543, main
+read/write) and Session pooler (port 5432, IPv4 workaround for
+DDL/migrations/locks) connection strings per gbrain's own documented
+gotchas (`docs/tutorials/personal-brain.md` §7a-7c in the cloned repo).
+
+**Step 2 — migrated local gbrain from PGLite to Postgres.**
+- `gbrain config set database_url "<transaction pooler>"` — first attempt
+  appeared to silently fail (`gbrain config show` didn't list it
+  afterward), but a second attempt printed explicit confirmation
+  (`Set database_url = postgresql://...`); turned out `config show`
+  deliberately omits `database_url` from its display rather than the value
+  never having saved.
+- `setx GBRAIN_DIRECT_DATABASE_URL "<session pooler>"` — the IPv4 fix.
+- `gbrain migrate --to supabase` initially failed ("no connection string
+  provided") despite `database_url` being configured — the migrate command
+  doesn't read it from config automatically and needs `--url` passed
+  explicitly. Retrieved the already-configured value via
+  `gbrain config get database_url` (never displayed in chat) and passed it
+  as `--url`.
+- Migration succeeded: all 98 pages + links + embeddings copied, verified
+  matching count and 100% embedding coverage. `config.json` now shows
+  `"engine": "postgres"`. Local dev's search/chat continues working
+  unchanged against the new backend — gbrain's own config file abstracts
+  the engine switch away from our app code entirely.
+
+**Step 3 — hosting `gbrain serve --http` and the auth gotcha that cost the
+most time.** Created a legacy bearer token via `gbrain auth create
+"test-client"` (simpler than the full OAuth 2.1 client_credentials flow
+for a server-to-server use case, and Postgres-only — which we now have).
+First few `tools/call` requests against the local HTTP server (tested
+before touching Railway, to de-risk the remote deploy) all returned empty
+results (`"[]"`) despite the exact same query working via local CLI
+against the same Supabase database. Root cause, found by reading
+`src/core/oauth-provider.ts` in the cloned repo: **legacy bearer tokens
+default to the `default` source (0 pages) unless a `permissions.source_id`
+grant is explicitly set** — no CLI flag exists for this on `gbrain auth
+create` (only `register-client`, the OAuth path, has `--source`). Fixed by
+UPDATE-ing the token's `permissions` JSONB directly in Supabase (via a
+throwaway Node script using the `postgres` package, run once, not added as
+a project dependency) to add `source_id: "personal-brain"`. Search then
+worked correctly and matched local CLI results exactly.
+
+**Also discovered while probing the raw HTTP endpoint:**
+- The MCP HTTP transport requires `Accept: application/json,
+  text/event-stream` or it 406s.
+- Responses come back as a single SSE `event: message` frame, not a plain
+  JSON body — the `data:` line has to be extracted before parsing as
+  JSON-RPC.
+- The `search` tool's schema (confirmed via `tools/list`) has no `source`
+  parameter at all — scoping is entirely by the authenticated token's
+  grant, not a per-call argument.
+- `search` still returns only chunked body text, no frontmatter — so the
+  real Gmail/Drive `url` we cite still needs a second call per hit, now to
+  the remote `get_page` tool (confirmed it returns
+  `frontmatter.url`) instead of reading a local file. This is what makes
+  the same code path work identically from Vercel, which has no
+  filesystem access to `brain/*.md` at all.
+
+**Code changes:**
+- [`src/lib/brain/gbrain-remote.ts`](src/lib/brain/gbrain-remote.ts) (new)
+  — the unified MCP HTTP client (`mcpCall`, `searchBrain`, `searchGmail`,
+  `searchDrive`, `get_page`-based URL lookup). Used by BOTH local dev and
+  the eventual Vercel deployment — no more dual code paths.
+- [`src/lib/query/tools.ts`](src/lib/query/tools.ts) — now imports search
+  from `gbrain-remote` instead of `gbrain-cli`.
+- [`src/lib/brain/gbrain-cli.ts`](src/lib/brain/gbrain-cli.ts) — trimmed
+  to only `commitBrainRepo` / `syncBrain` (ingestion, still local-only by
+  design). All search-related code removed.
+- `.env.local` gained `GBRAIN_REMOTE_URL` (currently
+  `http://localhost:3131/mcp` for local testing) and `GBRAIN_REMOTE_TOKEN`
+  (written directly to the file, never displayed in chat, same pattern as
+  `NEXTAUTH_SECRET`).
+
+**Verified:** `tsc --noEmit`, `eslint src` both clean. Raw curl tests
+against the local `gbrain serve --http` (pointed at Supabase) confirm
+`search` and `get_page` both return correct, real data matching local CLI
+results exactly.
+
+**Current state:** Local gbrain fully migrated to Supabase; local HTTP MCP
+server validated end-to-end at the protocol level. Not yet done: full
+chat-UI click-through against the new remote-search code path (should be
+transparent to the user, but not yet confirmed), then deploying `gbrain
+serve --http` to Railway (currently only running on the dev machine),
+then deploying the Next.js app itself to Vercel with all secrets set via
+Vercel's Environment Variables dashboard.
