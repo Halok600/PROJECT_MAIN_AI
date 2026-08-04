@@ -802,3 +802,77 @@ transparent to the user, but not yet confirmed), then deploying `gbrain
 serve --http` to Railway (currently only running on the dev machine),
 then deploying the Next.js app itself to Vercel with all secrets set via
 Vercel's Environment Variables dashboard.
+
+---
+
+## 2026-08-04 — gbrain hosted remotely on Render (not Railway); fixed embedding-dimension crash
+
+**Context:** Before deploying, user asked how to make hosting last "at
+least a year or two" without ongoing cost — flagged that Railway's free
+tier is a one-time trial credit (~$5), not perpetual, so it wouldn't meet
+that goal even though it's the easiest setup. Laid out three real options
+(Render free tier / Railway now + migrate later / Oracle Cloud Always
+Free) with honest trade-offs (cold-starts vs. setup effort vs. true
+permanence). User chose Render — genuinely free indefinitely, similar
+ease of setup to Railway, at the cost of occasional cold-start latency
+after inactivity.
+
+**Deploy setup:** Added [`gbrain-server/Dockerfile`](gbrain-server/Dockerfile)
+— a minimal `oven/bun:1` image that installs gbrain globally and runs
+`gbrain serve --http --port ${PORT:-3131} --bind 0.0.0.0`. Deliberately no
+`config.json` baked into the image and no `--public-url` flag: engine
+auto-detects to `postgres` when no config file exists and
+`GBRAIN_DATABASE_URL` is set (confirmed by reading `src/core/config.ts` in
+the cloned repo), and `--public-url` is only needed for OAuth 2.1 issuer
+discovery, which this deployment doesn't use (legacy bearer tokens
+instead). Render service created with root directory `gbrain-server`,
+Docker runtime, free instance type, and env vars `GBRAIN_DATABASE_URL`
+(transaction pooler), `GBRAIN_DIRECT_DATABASE_URL` (session pooler),
+`GOOGLE_GENERATIVE_AI_API_KEY`.
+
+**Bug hit and fixed — search silently 404'd on the deployed instance
+(GET worked, POST didn't).** First live test against the Render URL:
+`GET /mcp` correctly returned 405 (route exists, wrong method), but
+`POST /mcp` with a real `tools/call` search request returned a bare
+`Not Found` — even with no Authorization header at all, ruling out an
+auth-scoping issue. Checked Render's server logs (user shared
+screenshots) and found the actual cause spelled out in gbrain's own
+startup output: *"Stateless hosts: embedding_model/embedding_dimensions
+resolve from env/config.json only — set GBRAIN_EMBEDDING_MODEL /
+GBRAIN_EMBEDDING_DIMENSIONS... to match the brain's schema."* Neither var
+was set, so the server fell back to gbrain's default embedder
+(`zeroentropyai:zembed-1`, 1280 dimensions) instead of the actual brain's
+schema (`google:gemini-embedding-001`, 768 dimensions) — `search` has to
+embed the query text before it can do vector search, so the dimension
+mismatch crashed that code path specifically while dimension-agnostic
+routes (bare GET) stayed fine. Fixed by adding `GBRAIN_EMBEDDING_MODEL=
+google:gemini-embedding-001` and `GBRAIN_EMBEDDING_DIMENSIONS=768` to
+Render's env vars; Render auto-redeployed and the very same search query
+returned correct real results afterward (score 1.0 on the exact-match
+Drive doc — even better ranked than local, interesting but not
+investigated further).
+
+**Also noted, not acted on:** startup logs also warned
+`GBRAIN_HTTP_CORS_ORIGIN is unset — OAuth endpoints will reject ALL
+cross-origin requests`. Not relevant here — our Next.js API routes call
+gbrain server-side (Node `fetch`, not browser JS), so browser CORS policy
+never applies to this traffic. Left unset.
+
+**Cleanup:** killed the temporary local `gbrain serve --http` process
+(was only running in this session's own background shell for
+pre-deployment testing) and updated `.env.local`'s `GBRAIN_REMOTE_URL`
+from `http://localhost:3131/mcp` to the live Render URL — local dev now
+talks to the same remote brain the eventual Vercel deployment will use.
+
+**Verified:** live `curl` against `https://personal-brain-gbrain.onrender.com`
+— `/health` returns `{"status":"ok","engine":"postgres"}`, and a real
+`tools/call` search request returns correct, real results matching local
+CLI output.
+
+**Current state:** gbrain is fully hosted and working remotely. Remaining
+for the Vercel deployment itself: create the Vercel project from the
+GitHub repo, set all secrets via Vercel's Environment Variables dashboard
+(Google OAuth client, Gemini key, NextAuth secret + production URL,
+`GBRAIN_REMOTE_URL`/`GBRAIN_REMOTE_TOKEN`), add the production URL as an
+authorized redirect URI in Google Cloud Console (OAuth will 401 otherwise),
+deploy, and verify live.
