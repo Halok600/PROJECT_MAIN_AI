@@ -23,7 +23,13 @@ function computeActiveTools(messages: UIMessage[]): string[] {
   return Array.from(active);
 }
 
-export function Workspace({ email }: { email: string }) {
+export function Workspace({
+  email,
+  ingestionEnabled,
+}: {
+  email: string;
+  ingestionEnabled: boolean;
+}) {
   // useChat's sendMessage({ messageId }) REPLACES an existing message with
   // that id — it doesn't let you assign an id to a new one — so a real id
   // for the user's own message isn't knowable until the hook creates it.
@@ -51,7 +57,7 @@ export function Workspace({ email }: { email: string }) {
 
   return (
     <div className="flex h-screen w-screen gap-4 overflow-hidden p-4">
-      <Sidebar email={email} activeTools={activeTools} />
+      <Sidebar email={email} activeTools={activeTools} ingestionEnabled={ingestionEnabled} />
       <main className="flex min-w-0 flex-1 flex-col">
         <Chat
           messages={chat.messages}

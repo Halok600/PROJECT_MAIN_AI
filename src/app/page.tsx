@@ -8,7 +8,13 @@ export default async function Home() {
     return <LoginScreen />;
   }
 
-  return <Workspace email={session.user?.email ?? "unknown"} />;
+  // Ingestion (git commit + gbrain sync) shells out to a locally-installed
+  // gbrain binary and a local brain/ git repo — neither exists on Vercel's
+  // serverless functions. Vercel always sets VERCEL=1; local `next dev`/
+  // `next start` never do. See JOURNAL.md 2026-08-05.
+  const ingestionEnabled = !process.env.VERCEL;
+
+  return <Workspace email={session.user?.email ?? "unknown"} ingestionEnabled={ingestionEnabled} />;
 }
 
 function LoginScreen() {

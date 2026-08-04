@@ -56,7 +56,15 @@ function ActiveTools({ tools }: { tools: string[] }) {
   );
 }
 
-export function Sidebar({ email, activeTools }: { email: string; activeTools: string[] }) {
+export function Sidebar({
+  email,
+  activeTools,
+  ingestionEnabled,
+}: {
+  email: string;
+  activeTools: string[];
+  ingestionEnabled: boolean;
+}) {
   return (
     <aside className="clip-corner flex h-full w-80 shrink-0 flex-col justify-between border-2 border-[var(--border-dim)] bg-[var(--bg-sidebar)] p-6">
       <div className="flex flex-col gap-8">
@@ -84,7 +92,13 @@ export function Sidebar({ email, activeTools }: { email: string; activeTools: st
       </div>
 
       <div className="flex flex-col gap-3">
-        <SyncButton />
+        {ingestionEnabled ? (
+          <SyncButton />
+        ) : (
+          <p className="font-mono text-[11px] leading-snug text-[var(--text-dim)]">
+            {"// re-sync runs from local dev only — this deployment reads the same shared brain"}
+          </p>
+        )}
         <form action={disconnect}>
           <button
             type="submit"

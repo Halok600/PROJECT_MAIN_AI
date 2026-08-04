@@ -876,3 +876,59 @@ GitHub repo, set all secrets via Vercel's Environment Variables dashboard
 `GBRAIN_REMOTE_URL`/`GBRAIN_REMOTE_TOKEN`), add the production URL as an
 authorized redirect URI in Google Cloud Console (OAuth will 401 otherwise),
 deploy, and verify live.
+
+---
+
+## 2026-08-05 — Deployed to Vercel; live at project-main-ai.vercel.app
+
+**Deploy steps:** created the Vercel project from the GitHub repo, set all
+6 secrets (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`,
+`GOOGLE_GENERATIVE_AI_API_KEY`, `GBRAIN_REMOTE_URL`, `GBRAIN_REMOTE_TOKEN`)
+via Vercel's Environment Variables dashboard (never committed to the
+repo), deployed.
+
+**Bug hit and fixed — OAuth `redirect_uri_mismatch`.** First live login
+attempt failed with Google's `Error 400: redirect_uri_mismatch`, since the
+Google Cloud OAuth client only had `localhost:3000`'s callback URL
+registered. Added
+`https://project-main-ai.vercel.app/api/auth/callback/google` to
+Authorized redirect URIs, added `NEXTAUTH_URL` to Vercel's env vars,
+redeployed. Verified live — reaches Google's real sign-in screen
+correctly afterward.
+
+**Bug hit and fixed — the "Re-sync" button is broken on the deployed
+site (as expected, but was never actually disabled there).** User tested
+the deployed app and hit "Ingestion sync failed" clicking re-sync. This
+is the exact limitation flagged at the very start of the Vercel work:
+`/api/ingest/sync` shells out to a local gbrain binary and a local
+`brain/` git repo, neither of which exist on Vercel's serverless
+functions — only the search/chat path was ever migrated to work
+remotely, but the sync button was still visible and wired to the
+local-exec code path everywhere. Fixed properly instead of just
+explaining it away, since a visibly-broken button in a graded demo looks
+bad: `page.tsx` now computes `ingestionEnabled = !process.env.VERCEL`
+(Vercel always sets `VERCEL=1`; local `next dev`/`next start` never do)
+and threads it down through `Workspace` to `Sidebar`, which shows the
+real re-sync button locally but a plain explanatory note
+("re-sync runs from local dev only — this deployment reads the same
+shared brain") on the deployed site instead. Also added a server-side
+guard directly in `/api/ingest/sync` (returns 501 with a clear message
+if `process.env.VERCEL` is set) as defense-in-depth, independent of
+whatever the UI shows.
+
+**Also clarified for the user:** this app is single-tenant by design
+(SPEC.md's explicit "single user" scope) — there's one shared brain in
+Supabase, not one per Google account. Logging in with a second Google
+account and re-syncing would mix that account's data into the same
+brain, not keep it separate. No architecture change made here since it's
+out of scope for the assignment; just made sure the user understood the
+behavior before they tried it.
+
+**Verified:** `tsc --noEmit`, `eslint src`, `next build` all clean.
+
+**Current state:** App fully deployed and live at
+https://project-main-ai.vercel.app — OAuth, chat, and remote-gbrain
+search all confirmed working in earlier steps; the ingestion-button fix
+above is committed and pushed, awaiting Vercel's auto-redeploy (GitHub
+integration) and a final live click-through to confirm the sidebar shows
+the correct state on production.
