@@ -1271,4 +1271,131 @@ used during development with real findings that materially improved the
 work (not a symbolic invocation). `evals/EVAL_LOG.md` contains excerpts
 of the user's real personal Gmail/Drive content (shortlist status, real
 document names/links) — flagged to the user before deciding whether to
-commit it as public evidence or gitignore it for privacy.
+commit it as public evidence or gitignore it for privacy. User chose to
+commit it (same sensitivity level as what's already visible in the
+deployed demo).
+
+---
+
+## 2026-08-05/06 — Framer Motion micro-interactions + light/dark theme switcher
+
+**Context:** User's earlier Framer Motion + theme-switcher request
+(paused mid-conversation to check priority against the submission
+deadline) was reconfirmed after all required-and-bonus assignment work
+was independently verified complete. Implemented in full.
+
+**Framer Motion (`npm install framer-motion`):**
+- [`MessageBubble.tsx`](src/app/chat/MessageBubble.tsx) — root converted
+  to `motion.div` with `initial={{opacity:0,y:16}}` → `animate` on mount;
+  since each message has a stable `key={message.id}` and only NEW messages
+  mount, this naturally staggers in a live chat without needing explicit
+  `staggerChildren` orchestration (which only matters for batch-mounted
+  lists, not one-at-a-time streaming).
+- Hover/tap (`whileHover={{scale:1.02}}` / `whileTap={{scale:0.98}}`) on:
+  [`SyncButton`](src/app/SyncButton.tsx), Sidebar's Disconnect button,
+  Chat's Send button, [`SourceChip`](src/app/chat/SourceChip.tsx),
+  [`SystemErrorBanner`](src/app/chat/SystemErrorBanner.tsx)'s Retry button
+  (which also got a slide-up+fade-in entrance animation — fits naturally
+  now that Motion is already a dependency).
+- Sidebar's active-tool pulsing dot converted from Tailwind's
+  `animate-pulse` (a harsher linear blink) to a smooth Motion
+  `animate={{opacity:[...], scale:[...]}}` loop, consistent with the
+  earlier "smooth cyberpunk, not harsh blink" direction from the loading-
+  indicator work (JOURNAL.md 2026-08-05).
+- Login screen's Connect button deliberately NOT converted to
+  Framer Motion — it's a Server Component with a server-action form;
+  converting just for one hover effect would mean pulling the whole
+  login screen into the client bundle for no real benefit. Used
+  Tailwind's `hover:scale-[1.02] active:scale-[0.98]` instead, same
+  visual result, honest scoping trade-off.
+
+**Real bug found and fixed while wiring up hover states — `hover:glow-border-*` never worked, anywhere, until now.**
+Every button across the app already used `hover:glow-border-cyan` /
+`hover:glow-border-pink` (SyncButton, Send, Disconnect, chips, etc.), but
+`.glow-border-cyan` was declared as a **plain CSS class** in globals.css,
+not a Tailwind-registered utility — Tailwind v4 only generates variant
+rules (`hover:`, `focus:`, ...) for classes it recognizes as utilities
+(built-in, or declared via `@utility`). Verified empirically: grepped the
+actual compiled dev CSS for `glow-border-cyan` and found exactly one
+occurrence (the base class itself) — no `:hover` rule existed anywhere.
+Every hover-glow across the entire app had been silently inert since it
+was first written. Fixed by redeclaring the glow/clip-corner utilities
+with `@utility` instead of plain classes; re-verified by grepping the
+rebuilt CSS, which now shows both the base rule AND
+`.glow-border-cyan:hover{...}`. Also fixed a smaller latent bug in the
+same block: `.glow-border-pink`'s border-color was a hardcoded
+`rgba(255,46,166,.6)` instead of deriving from `--neon-pink` — harmless
+in the dark-only single-theme world it was written in, but would have
+shown the wrong (dark-mode) magenta on light-mode panels. Now uses
+`color-mix(in srgb, var(--neon-pink) 60%, transparent)`, which adapts
+with the theme.
+
+**Light/dark theme switcher:**
+- [`ThemeProvider.tsx`](src/app/ThemeProvider.tsx) — context +
+  `localStorage` persistence (`personal-brain:theme`) + `[data-theme]` on
+  `<html>`. An inline script (`NO_FLASH_THEME_SCRIPT`) is injected into
+  `<head>` in [`layout.tsx`](src/app/layout.tsx) and sets `[data-theme]`
+  from `localStorage` *before* hydration, so switching themes doesn't
+  flash the wrong palette on load — the standard pattern (same one
+  `next-themes` uses).
+- [`ThemeToggle.tsx`](src/app/chat/ThemeToggle.tsx) — a Motion-animated
+  sliding switch (spring transition, crossfading Sun/Moon icons) in the
+  Sidebar header.
+- [`globals.css`](src/app/globals.css) — every themed token (`--bg`,
+  `--bg-panel`, `--neon-cyan/yellow/pink`, `--text-primary/dim`,
+  `--border-dim/glow`, all three `--glow-*` shadows, and the scanline/grid
+  overlay's tint) now has a `:root[data-theme="light"]` override. Since
+  zero components use hardcoded hex colors (confirmed via grep before
+  starting — everything already routed through these CSS variables), the
+  whole app re-themes correctly with **no component-level changes**
+  needed anywhere except the toggle switch itself, which needs to know
+  the current value to animate correctly.
+- Light palette ("Neo-Tokyo lab," not generic white, per spec): background
+  `#f0f3f8`, panels `#e2e8f0`/`#d3dbe6`, text `#0f172a`, accents recomputed
+  for legibility on light — electric blue `#0055ff`, acid green `#4a9e00`,
+  hot magenta `#d6009e` (dark-mode's raw neon hex values would have had
+  poor contrast against a light background, so these aren't just the same
+  colors reused — recomputed specifically for this palette).
+- Global smooth transition (`background-color`/`border-color`/`color`,
+  220ms) added on `*` so toggling is a cross-fade, not a flash — scoped to
+  exclude `box-shadow`/`transform` so it doesn't fight with Motion's own
+  hover/tap animations or the thinking-indicator's keyframes, which
+  animate different properties.
+
+**Bug hit and fixed — hydration mismatch from the no-flash script.**
+First live check (browser console) showed a real React hydration warning:
+server-rendered `<html>` has no `[data-theme]` (the server can't know the
+client's localStorage value), but the inline script sets it before
+hydration, so client and server HTML genuinely differ on that one
+attribute — expected with this pattern, but I'd forgotten the
+`suppressHydrationWarning` prop that's required alongside it (confirmed
+via curl against the raw SSR payload that the fix was actually served,
+and via a **fresh browser tab** that the warning was gone — an existing
+tab kept showing the same cached warning + a stale WebSocket HMR id after
+a server restart, which was leftover console-log accumulation from before
+the fix, not a real ongoing failure; closed that tab to avoid confusion).
+
+**Verified:**
+- `tsc --noEmit`, `eslint src evals`, `next build` all clean.
+- Compiled CSS re-checked directly: `hover:glow-border-cyan` now
+  generates a real `:hover` rule (it never did before).
+- Theme mechanism verified end-to-end via direct browser JS (no
+  authenticated session available to click the actual toggle switch,
+  which only renders in the logged-in sidebar): set
+  `localStorage["personal-brain:theme"]="light"`, reloaded, confirmed
+  `document.documentElement.dataset.theme === "light"`,
+  `getComputedStyle(body).backgroundColor === "rgb(240, 243, 248)"`
+  (exactly `#f0f3f8`), and both `--neon-cyan`/`--neon-pink` resolved to
+  the correct light-mode hex values — persistence, the no-flash script,
+  and the full CSS variable cascade all confirmed working together. Zero
+  console errors in either theme, in a genuinely fresh tab.
+- Not yet visually confirmed: the toggle switch's own click/slide
+  animation, message entrance animations, and hover glows in the actual
+  authenticated UI — requires the user's login session, requested from
+  them directly.
+
+**Current state:** Full scope of the original request implemented and
+verified as far as possible without an authenticated session, plus two
+real bugs found and fixed along the way (the hover-glow no-op and the
+hydration mismatch) that weren't part of the original ask but directly
+affect it.

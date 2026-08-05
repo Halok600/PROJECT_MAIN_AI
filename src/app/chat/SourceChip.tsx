@@ -1,3 +1,5 @@
+import { motion } from "framer-motion";
+
 export type Source = {
   tool: "search_gmail" | "search_drive";
   title: string;
@@ -35,14 +37,17 @@ export function SourceChip({ source }: { source: Source }) {
   }
 
   return (
-    <a
+    <motion.a
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
       title={`relevance ${source.score.toFixed(2)} — open source`}
       className={LINK_CLASSES}
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
+      transition={{ duration: 0.15 }}
     >
       {content}
-    </a>
+    </motion.a>
   );
 }

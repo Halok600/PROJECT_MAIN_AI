@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 
 type SyncResult = {
   gmailCount: number;
@@ -34,14 +35,17 @@ export function SyncButton() {
 
   return (
     <div className="flex flex-col gap-2">
-      <button
+      <motion.button
         type="button"
         onClick={handleSync}
         disabled={state === "loading"}
+        whileHover={state === "loading" ? undefined : { scale: 1.02 }}
+        whileTap={state === "loading" ? undefined : { scale: 0.98 }}
+        transition={{ duration: 0.15 }}
         className="clip-corner-sm w-full border-2 border-[var(--neon-cyan)]/70 bg-[var(--bg-panel-raised)] px-4 py-3 font-mono text-sm font-bold tracking-wide text-[var(--neon-cyan)] transition-shadow hover:glow-border-cyan disabled:opacity-40 disabled:hover:shadow-none"
       >
         {state === "loading" ? "SYNCING..." : "RE-SYNC GMAIL + DRIVE"}
-      </button>
+      </motion.button>
 
       {state === "done" && result && (
         <p className="font-mono text-xs leading-snug text-[var(--text-dim)]">

@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { SourceChip, type Source } from "./SourceChip";
 import { ThinkingIndicator } from "./ThinkingIndicator";
@@ -53,7 +54,11 @@ export function MessageBubble({
   const isUser = role === "user";
 
   return (
-    <div
+    <motion.div
+      layout="position"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
       className={`flex max-w-[68ch] flex-col gap-1.5 ${
         isUser ? "self-end items-end" : "self-start items-start"
       }`}
@@ -85,6 +90,6 @@ export function MessageBubble({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

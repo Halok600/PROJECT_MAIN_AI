@@ -36,7 +36,7 @@ function LoginScreen() {
         >
           <button
             type="submit"
-            className="clip-corner-sm border-2 border-[var(--neon-pink)]/70 bg-[var(--bg-panel-raised)] px-8 py-4 font-mono text-base font-bold tracking-wide text-[var(--neon-pink)] transition-shadow hover:glow-border-pink"
+            className="clip-corner-sm border-2 border-[var(--neon-pink)]/70 bg-[var(--bg-panel-raised)] px-8 py-4 font-mono text-base font-bold tracking-wide text-[var(--neon-pink)] transition-[box-shadow,transform] duration-150 hover:glow-border-pink hover:scale-[1.02] active:scale-[0.98]"
           >
             CONNECT GOOGLE ACCOUNT
           </button>

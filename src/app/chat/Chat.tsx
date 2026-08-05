@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import type { UIMessage, ChatStatus } from "ai";
 import { MessageBubble } from "./MessageBubble";
 import { SystemErrorBanner } from "./SystemErrorBanner";
@@ -91,13 +92,16 @@ export function Chat({
           disabled={isBusy}
           className="clip-corner-sm flex-1 border-2 border-[var(--border-dim)] bg-[var(--bg-panel)] px-5 py-4 text-base text-[var(--text-primary)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--neon-yellow)] focus:shadow-[var(--glow-yellow)] disabled:opacity-50"
         />
-        <button
+        <motion.button
           type="submit"
           disabled={isBusy || !input.trim()}
+          whileHover={isBusy || !input.trim() ? undefined : { scale: 1.02 }}
+          whileTap={isBusy || !input.trim() ? undefined : { scale: 0.98 }}
+          transition={{ duration: 0.15 }}
           className="clip-corner-sm border-2 border-[var(--neon-pink)]/70 bg-[var(--bg-panel-raised)] px-8 py-4 font-mono text-base font-bold text-[var(--neon-pink)] transition-shadow hover:glow-border-pink disabled:opacity-40 disabled:hover:shadow-none"
         >
           SEND
-        </button>
+        </motion.button>
       </form>
     </div>
   );

@@ -1,6 +1,8 @@
 import { Mail, HardDrive, Search, Radio } from "lucide-react";
+import { motion } from "framer-motion";
 import { SyncButton } from "../SyncButton";
 import { disconnect } from "../actions";
+import { ThemeToggle } from "./ThemeToggle";
 
 const TOOL_META: Record<string, { label: string; icon: typeof Mail }> = {
   search_gmail: { label: "SEARCH_GMAIL", icon: Mail },
@@ -47,7 +49,12 @@ function ActiveTools({ tools }: { tools: string[] }) {
             className="flex items-center gap-2.5 rounded-sm bg-[var(--bg-panel)] px-3 py-2.5 font-mono text-sm font-bold text-[var(--neon-cyan)] glow-text-cyan"
           >
             <Icon size={18} style={{ filter: "drop-shadow(0 0 4px rgba(0, 240, 255, 0.85))" }} />
-            <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--neon-cyan)]" aria-hidden />
+            <motion.span
+              className="h-2 w-2 rounded-full bg-[var(--neon-cyan)]"
+              animate={{ opacity: [0.35, 1, 0.35], scale: [0.85, 1, 0.85] }}
+              transition={{ duration: 1.3, repeat: Infinity, ease: "easeInOut" }}
+              aria-hidden
+            />
             {meta.label}
           </div>
         );
@@ -68,11 +75,14 @@ export function Sidebar({
   return (
     <aside className="clip-corner flex h-full w-80 shrink-0 flex-col justify-between border-2 border-[var(--border-dim)] bg-[var(--bg-sidebar)] p-6">
       <div className="flex flex-col gap-8">
-        <div>
-          <h1 className="font-mono text-2xl font-bold tracking-widest text-[var(--neon-cyan)] glow-text-cyan">
-            PERSONAL_BRAIN
-          </h1>
-          <p className="mt-1.5 truncate font-mono text-xs text-[var(--text-dim)]">{email}</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="font-mono text-2xl font-bold tracking-widest text-[var(--neon-cyan)] glow-text-cyan">
+              PERSONAL_BRAIN
+            </h1>
+            <p className="mt-1.5 truncate font-mono text-xs text-[var(--text-dim)]">{email}</p>
+          </div>
+          <ThemeToggle />
         </div>
 
         <section className="flex flex-col gap-3">
@@ -100,12 +110,15 @@ export function Sidebar({
           </p>
         )}
         <form action={disconnect}>
-          <button
+          <motion.button
             type="submit"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            transition={{ duration: 0.15 }}
             className="clip-corner-sm w-full border-2 border-[var(--neon-pink)]/70 bg-[var(--bg-panel-raised)] px-4 py-3 font-mono text-sm font-bold tracking-wide text-[var(--neon-pink)] transition-shadow hover:glow-border-pink"
           >
             DISCONNECT
-          </button>
+          </motion.button>
         </form>
       </div>
     </aside>

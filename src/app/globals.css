@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------
-   Night City terminal theme — dark base, neon accents, CRT-ish glow,
-   cut-corner "tech" panels. Always dark (cyberpunk has no light mode),
-   so colors are fixed values rather than a light/dark pair.
+   Night City terminal theme — dark base (default) + a "Neo-Tokyo lab"
+   light variant, both neon-accented with glow, CRT-ish grid, cut-corner
+   "tech hardware" panels. Theme is toggled via [data-theme] on <html>
+   (see ThemeProvider.tsx) — every color below is a token so components
+   never need to know which theme is active.
 --------------------------------------------------------------------- */
 :root {
   --bg: #0a0a0c;
@@ -29,6 +31,14 @@
   --glow-pink: 0 0 8px rgba(255, 0, 60, 0.9), 0 0 24px rgba(255, 0, 60, 0.55), 0 0 48px rgba(255, 0, 60, 0.25);
   --glow-yellow: 0 0 8px rgba(252, 238, 10, 0.9), 0 0 24px rgba(252, 238, 10, 0.55), 0 0 48px rgba(252, 238, 10, 0.25);
 
+  /* Scanline/grid overlay tint — themed so the texture reads correctly on
+     both a near-black and a near-white base instead of just looking muddy. */
+  --grid-line: rgba(0, 240, 255, 0.05);
+  --grid-line-thin: rgba(0, 240, 255, 0.025);
+  --radial-a: rgba(255, 0, 60, 0.07);
+  --radial-b: rgba(0, 240, 255, 0.07);
+  --selection-text: #ffffff;
+
   /* Cut-corner shape used on panels/buttons/inputs for the "tech hardware" look. */
   --clip-corner: polygon(
     20px 0,
@@ -46,6 +56,36 @@
     0 100%,
     0 12px
   );
+}
+
+/* "Neo-Tokyo / High-Tech Lab" — not a plain white screen: crisp platinum
+   background, sharp slate panels, dark cyber text, vivid electric-blue /
+   hot-magenta / acid-green accents recomputed for legibility on light. */
+:root[data-theme="light"] {
+  --bg: #f0f3f8;
+  --bg-panel: #e2e8f0;
+  --bg-panel-raised: #d3dbe6;
+  --bg-sidebar: #e9edf3;
+
+  --neon-cyan: #0055ff;
+  --neon-yellow: #4a9e00;
+  --neon-pink: #d6009e;
+
+  --text-primary: #0f172a;
+  --text-dim: #51617a;
+
+  --border-dim: rgba(0, 85, 255, 0.32);
+  --border-glow: rgba(0, 85, 255, 0.85);
+
+  --glow-cyan: 0 0 8px rgba(0, 85, 255, 0.7), 0 0 24px rgba(0, 85, 255, 0.4), 0 0 48px rgba(0, 85, 255, 0.2);
+  --glow-pink: 0 0 8px rgba(214, 0, 158, 0.7), 0 0 24px rgba(214, 0, 158, 0.4), 0 0 48px rgba(214, 0, 158, 0.2);
+  --glow-yellow: 0 0 8px rgba(74, 158, 0, 0.7), 0 0 24px rgba(74, 158, 0, 0.4), 0 0 48px rgba(74, 158, 0, 0.2);
+
+  --grid-line: rgba(15, 23, 42, 0.045);
+  --grid-line-thin: rgba(15, 23, 42, 0.02);
+  --radial-a: rgba(214, 0, 158, 0.05);
+  --radial-b: rgba(0, 85, 255, 0.05);
+  --selection-text: #ffffff;
 }
 
 @theme inline {
@@ -75,6 +115,19 @@ body {
   font-family: var(--font-terminal), "Courier New", monospace;
 }
 
+/* Smooth theme toggle: color/background/border animate instead of
+   flashing. Scoped to these properties only (not box-shadow/transform) so
+   it doesn't fight with Framer Motion's hover/tap animations or the
+   thinking-bar keyframes, which animate different properties. */
+*,
+*::before,
+*::after {
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease;
+}
+
 /* Scanlines + a faint technical grid, static (never animated — flashing/
    scrolling backgrounds are an accessibility hazard). */
 body::before {
@@ -86,15 +139,15 @@ body::before {
   background-image:
     repeating-linear-gradient(
       0deg,
-      rgba(0, 246, 255, 0.025) 0px,
-      rgba(0, 246, 255, 0.025) 1px,
+      var(--grid-line-thin) 0px,
+      var(--grid-line-thin) 1px,
       transparent 1px,
       transparent 3px
     ),
-    linear-gradient(rgba(0, 246, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 246, 255, 0.05) 1px, transparent 1px),
-    radial-gradient(ellipse at 15% 0%, rgba(255, 46, 166, 0.07), transparent 55%),
-    radial-gradient(ellipse at 85% 100%, rgba(0, 246, 255, 0.07), transparent 55%);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    radial-gradient(ellipse at 15% 0%, var(--radial-a), transparent 55%),
+    radial-gradient(ellipse at 85% 100%, var(--radial-b), transparent 55%);
   background-size:
     auto,
     auto,
@@ -112,7 +165,7 @@ body > div {
 
 ::selection {
   background: var(--neon-pink);
-  color: #05050a;
+  color: var(--selection-text);
 }
 
 ::-webkit-scrollbar {
@@ -131,28 +184,38 @@ body > div {
 }
 
 /* Reusable glow / cut-corner utilities — multi-layer shadows and clip-path
-   polygons get unwieldy inline across several components. */
-.glow-text-cyan {
+   polygons get unwieldy inline across several components.
+   Declared via @utility (not plain classes) so Tailwind's variant system
+   (hover:, focus:, etc.) actually applies to them. This was a real latent
+   bug found while wiring up hover interactions: `hover:glow-border-cyan`
+   was used all over the app already, but with a plain `.glow-border-cyan`
+   class Tailwind never generates a `.hover\:glow-border-cyan:hover` rule
+   for it — confirmed empirically (compiled CSS had exactly one occurrence
+   of the class, its own base definition, no hover variant at all). Every
+   button's hover glow had been a silent no-op. See JOURNAL.md 2026-08-05. */
+@utility glow-text-cyan {
   text-shadow: var(--glow-cyan);
 }
-.glow-text-pink {
+@utility glow-text-pink {
   text-shadow: var(--glow-pink);
 }
-.glow-text-yellow {
+@utility glow-text-yellow {
   text-shadow: var(--glow-yellow);
 }
-.glow-border-cyan {
+@utility glow-border-cyan {
   border-color: var(--border-glow);
   box-shadow: var(--glow-cyan);
 }
-.glow-border-pink {
-  border-color: rgba(255, 46, 166, 0.6);
+@utility glow-border-pink {
+  /* color-mix (not a hardcoded hex) so this adapts across themes instead
+     of showing the dark-mode magenta on a light-mode panel. */
+  border-color: color-mix(in srgb, var(--neon-pink) 60%, transparent);
   box-shadow: var(--glow-pink);
 }
-.clip-corner {
+@utility clip-corner {
   clip-path: var(--clip-corner);
 }
-.clip-corner-sm {
+@utility clip-corner-sm {
   clip-path: var(--clip-corner-sm);
 }
 
