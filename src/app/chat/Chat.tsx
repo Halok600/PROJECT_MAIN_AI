@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { UIMessage, ChatStatus } from "ai";
 import { MessageBubble } from "./MessageBubble";
+import { SystemErrorBanner } from "./SystemErrorBanner";
 import { extractSources } from "./extractSources";
 
 export function Chat({
@@ -11,12 +12,16 @@ export function Chat({
   userTimestamps,
   assistantTimestamps,
   onSend,
+  systemError,
+  onRetry,
 }: {
   messages: UIMessage[];
   status: ChatStatus;
   userTimestamps: number[];
   assistantTimestamps: Record<string, number>;
   onSend: (text: string) => void;
+  systemError: string | null;
+  onRetry: () => void;
 }) {
   const [input, setInput] = useState("");
   const isBusy = status === "submitted" || status === "streaming";
@@ -31,7 +36,7 @@ export function Chat({
   return (
     <div className="flex h-full flex-1 flex-col gap-5">
       <div className="clip-corner flex flex-1 flex-col gap-6 overflow-y-auto border-2 border-[var(--border-dim)] bg-[var(--bg-panel)]/60 p-8">
-        {messages.length === 0 && (
+        {messages.length === 0 && !systemError && (
           <p className="font-mono text-base text-[var(--text-dim)]">
             <span className="text-[var(--neon-cyan)]">&gt;</span> Ask something like &ldquo;What&apos;s
             my status on the SkillLayer application?&rdquo;
@@ -47,6 +52,13 @@ export function Chat({
               .filter((p) => p.type === "text")
               .map((p) => (p as { text: string }).text)
               .join("");
+
+            // A failed generation can leave a real-but-empty assistant
+            // message in the transcript (the request errored before any
+            // tokens arrived). Once we're no longer busy, an empty bubble
+            // with nothing in it is just visual noise — the error banner
+            // below explains what happened instead.
+            if (!isUser && !text && !isBusy) return null;
 
             return (
               <MessageBubble
@@ -64,6 +76,8 @@ export function Chat({
             );
           });
         })()}
+
+        {systemError && <SystemErrorBanner message={systemError} onRetry={onRetry} />}
       </div>
 
       <form onSubmit={handleSubmit} className="flex gap-3">

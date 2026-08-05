@@ -38,6 +38,7 @@ export function Workspace({
   // looks it up by counting user messages as it renders them.
   const [userTimestamps, setUserTimestamps] = useState<number[]>([]);
   const [assistantTimestamps, setAssistantTimestamps] = useState<Record<string, number>>({});
+  const [systemError, setSystemError] = useState<string | null>(null);
 
   const chat: UseChatHelpers<UIMessage> = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -46,13 +47,25 @@ export function Workspace({
     onFinish: ({ message }) => {
       setAssistantTimestamps((prev) => ({ ...prev, [message.id]: Date.now() }));
     },
+    // Fires for both stream-embedded errors (rate limits/overload surfaced
+    // via the API route's onError, see route.ts) and network-level failures.
+    // error.message is already the human-readable string the server crafted.
+    onError: (error) => {
+      setSystemError(error.message);
+    },
   });
 
   const activeTools = computeActiveTools(chat.messages);
 
   function sendStampedMessage(text: string) {
+    setSystemError(null);
     setUserTimestamps((prev) => [...prev, Date.now()]);
     void chat.sendMessage({ text });
+  }
+
+  function retryLastMessage() {
+    setSystemError(null);
+    void chat.regenerate();
   }
 
   return (
@@ -65,6 +78,8 @@ export function Workspace({
           userTimestamps={userTimestamps}
           assistantTimestamps={assistantTimestamps}
           onSend={sendStampedMessage}
+          systemError={systemError}
+          onRetry={retryLastMessage}
         />
       </main>
     </div>

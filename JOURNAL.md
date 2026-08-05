@@ -1044,3 +1044,77 @@ clean and good."
 end (OAuth, ingestion, remote gbrain search, Gemini reasoning, citations),
 and now visually polished. All work from today's Vercel deployment push
 is complete.
+
+---
+
+## 2026-08-05 — Declined BYOK; implemented rate-limit/overload error handling
+
+**BYOK declined mid-implementation.** User asked for a "Bring Your Own
+Key" architecture so the deployed site could be shared with external
+users without burning their personal Gemini quota. Before writing code,
+flagged a real gap: the Google OAuth consent screen is still in Testing
+mode with a one-email allowlist, and `gmail.readonly`/`drive.readonly`
+are Google's restricted-scope tier — going public requires their formal
+verification process (privacy policy, security assessment), commonly
+weeks, not something achievable before the submission deadline. Even if
+login worked, every visitor would be querying the *owner's* shared
+Gmail/Drive brain, not their own — no per-user data isolation exists.
+User then asked directly whether real multi-tenancy is possible (gbrain
+does support the underlying primitives — per-user sources, scoped tokens,
+same as their documented "company brain" pattern — but wiring it up is a
+genuine re-architecture of auth + ingestion + query-scoping together).
+Recommended against pursuing either before the deadline. User agreed and
+said to scrap BYOK entirely — no code had been written yet (only research
+into the AI SDK's transport header API), so nothing to revert.
+
+**Implemented instead: graceful rate-limit/overload error handling.**
+Real problem worth solving regardless of BYOK — Gemini's free tier is
+easy to rate-limit into (we hit this ourselves multiple times testing
+model choices on 2026-08-04), and the app previously had no handling for
+it: a 429/503 mid-stream would just hang the UI forever (empty pending
+cursor, no feedback, no way to recover without a page reload).
+
+- [`src/app/api/chat/route.ts`](src/app/api/chat/route.ts) — most Gemini
+  failures surface *during* streaming, not as a synchronous throw from
+  `streamText()` (it returns immediately; the model call happens lazily
+  as the stream is consumed) — confirmed by reading the AI SDK's own
+  types. Wired a `friendlyErrorMessage()` classifier into
+  `toUIMessageStreamResponse({ onError })`, which controls the error text
+  embedded directly in the response stream. Classifier unwraps `RetryError`
+  (the SDK's own wrapper after exhausting its internal retries) via
+  `.lastError` to reach the underlying `APICallError` and its
+  `statusCode`: 429 → "high demand" message, 500/503 → "service overload"
+  message, other codes → generic upstream-error message with the code
+  included, non-API errors → generic fallback (logged server-side for
+  debugging). Kept the outer `try/catch` too, for genuinely synchronous
+  failures (bad request body, auth) that occur before `streamText` is
+  even reached.
+- [`src/app/chat/Workspace.tsx`](src/app/chat/Workspace.tsx) — added
+  `onError` to `useChat` (fires with an `Error` whose `.message` is
+  exactly the string the server crafted — no need to re-classify
+  client-side), storing it in a `systemError` state slot; cleared on
+  every new send and on retry. Added `retryLastMessage()` using `useChat`'s
+  built-in `regenerate()` rather than resending text manually.
+- [`src/app/chat/SystemErrorBanner.tsx`](src/app/chat/SystemErrorBanner.tsx)
+  (new) — pink/magenta glowing banner matching the existing alert-color
+  convention (already used for Send/Disconnect), with a Retry button.
+- [`src/app/chat/Chat.tsx`](src/app/chat/Chat.tsx) — renders the banner
+  after the message list when `systemError` is set. Also fixed a related
+  cosmetic edge case: a failed generation can leave a real-but-empty
+  assistant message in the transcript (request errored before any tokens
+  arrived) — now skipped once no longer busy, so the error banner isn't
+  preceded by an empty floating box.
+
+**Verified:** a standalone script constructing synthetic `APICallError`/
+`RetryError` instances (429, 503, 500-wrapped-in-RetryError, and a plain
+unclassified `Error`) confirmed all four classification branches produce
+the correct message — couldn't reliably force a real 429 from Gemini on
+demand without burning quota, so this was the practical way to verify the
+logic itself. `tsc --noEmit`, `eslint src`, `next build` all clean; no
+console errors on a live page load. Live click-through (including
+whether rapid-fire messages naturally trip a real rate limit) requested
+from the user.
+
+**Current state:** Error handling implemented and verified at the logic
+level; awaiting the user's live confirmation of both the normal path and
+(if it naturally triggers) the error path.
