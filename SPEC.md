@@ -183,8 +183,11 @@ Each phase ends with a checkpoint against this spec before moving on.
       (partial, honest answer, not a guess); Stripe/Priya-contract queries
       (no matching data) correctly answered "not found" rather than
       inventing a match.
-- [ ] SPEC.md changes are logged in JOURNAL.md when implementation deviates
-      from this document.
+- [x] SPEC.md changes are logged in JOURNAL.md when implementation deviates
+      from this document — every architecture pivot, model swap, and bug
+      fix throughout the build has a dated JOURNAL.md entry (gbrain
+      architecture split, Gemini model changes, embedding-scope bugs,
+      Vercel/Render/Supabase deployment, etc.).
 
 ## 10. Known risks
 

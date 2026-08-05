@@ -14,6 +14,7 @@ function formatHits(hits: Awaited<ReturnType<typeof searchGmail>>) {
       score: h.score,
       snippet: h.snippet,
       url: h.url,
+      date: h.date,
     })),
   };
 }

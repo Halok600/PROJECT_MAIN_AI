@@ -5,6 +5,7 @@ export type BrainSearchHit = {
   score: number;
   snippet: string;
   url?: string;
+  date?: string;
 };
 
 function requireEnv(name: string): string {
@@ -61,18 +62,22 @@ type RawSearchHit = {
 };
 
 /**
- * The url we cite lives in each page's frontmatter, which `search` never
- * returns (only chunked body text) — fetch it per-hit via `get_page`. This
- * is what lets local dev and the Vercel deployment share one implementation:
- * neither needs local filesystem access to brain/*.md anymore.
+ * The url (and date) we cite live in each page's frontmatter, which `search`
+ * never returns (only chunked body text) — fetch it per-hit via `get_page`.
+ * This is what lets local dev and the Vercel deployment share one
+ * implementation: neither needs local filesystem access to brain/*.md
+ * anymore. `date` was added after an eval run (evals/EVAL_LOG.md,
+ * JOURNAL.md 2026-08-05) surfaced that recency-based queries ("last week")
+ * were structurally unanswerable — the model had no timestamp on any
+ * result at all.
  */
-async function getPageUrl(slug: string): Promise<string | undefined> {
+async function getPageMeta(slug: string): Promise<{ url?: string; date?: string }> {
   try {
-    const page = await mcpCall<{ frontmatter?: { url?: string } }>("get_page", { slug });
-    return page.frontmatter?.url;
+    const page = await mcpCall<{ frontmatter?: { url?: string; date?: string } }>("get_page", { slug });
+    return { url: page.frontmatter?.url, date: page.frontmatter?.date };
   } catch (err) {
     console.error(`Failed to fetch frontmatter for ${slug}`, err);
-    return undefined;
+    return {};
   }
 }
 
@@ -109,10 +114,11 @@ export async function searchBrain(
   // only the top few most-relevant results get a clickable citation link.
   const MAX_URL_LOOKUPS = 3;
   const enriched = await Promise.all(
-    filtered.map(async (hit, i) => ({
-      ...hit,
-      url: i < MAX_URL_LOOKUPS ? await getPageUrl(hit.slug) : undefined,
-    })),
+    filtered.map(async (hit, i) => {
+      if (i >= MAX_URL_LOOKUPS) return hit;
+      const meta = await getPageMeta(hit.slug);
+      return { ...hit, url: meta.url, date: meta.date };
+    }),
   );
   return enriched;
 }

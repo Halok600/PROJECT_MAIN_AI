@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "eval": "bun run evals/run-evals.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.31",

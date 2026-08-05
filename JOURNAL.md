@@ -1152,3 +1152,123 @@ unconfirmed cause.
 console errors; confirmed via `getComputedStyle(document.body).fontFamily`
 in a live page load that the entire app now resolves to
 `"Share Tech Mono", ... monospace` with no Inter fallback anywhere.
+
+---
+
+## 2026-08-05 — Real eval loop + genuine subagent verification (harness-engineering bonus)
+
+**Context:** User asked whether every requirement and bonus in the
+assignment brief had been achieved. Answered honestly: everything
+required was done and verified, but the optional "harness engineering"
+bonus (subagents, structured tool definitions, eval loops, prompt
+iteration logs) was only half-true as claimed — tool definitions and
+prompt-iteration evidence were genuinely strong (this JOURNAL), but no
+subagent had actually been used in building the project, and no
+automated eval loop existed (verification so far had all been manual,
+logged after the fact). User asked to fully close both gaps rather than
+leave them as acknowledged bonus gaps — and explicitly not by faking
+either one.
+
+**Refactor first — single source of truth for the model config.**
+Extracted `SYSTEM_PROMPT` and `CHAT_MODEL_ID` out of
+[`src/app/api/chat/route.ts`](src/app/api/chat/route.ts) into a new
+[`src/lib/query/config.ts`](src/lib/query/config.ts), imported by both
+the real route and the new eval harness. Deliberate: an eval suite that
+imports a hand-copied duplicate of the prompt/model would only prove the
+duplicate works, not the deployed system — this way a real drift between
+what's tested and what's deployed is structurally impossible.
+
+**Built the eval loop for real.**
+[`evals/cases.ts`](evals/cases.ts) — 5 cases mirroring SPEC.md §5's exact
+target queries (3 Tier 1, 2 Tier 2), using the concrete versions already
+manually verified earlier (e.g. "[X]" → "Nirmit from SkillLayer").
+[`evals/run-evals.ts`](evals/run-evals.ts) — imports the actual
+`brainTools` (`src/lib/query/tools.ts`) and the shared config above, runs
+each query through real `generateText`, and checks two independent things
+per case: whether the expected tools were actually invoked (proof of
+real single-/cross-source retrieval, not just plausible text) and whether
+the answer matches expected keywords or correctly reports "not found" for
+the two grounding/negative cases. Writes a full timestamped log to
+`evals/EVAL_LOG.md`. Wired up as `npm run eval`
+([`package.json`](package.json)).
+
+First real run against live data (not mocked): **5/5 passed.**
+
+**Genuine subagent dispatch — not just claimed.** Rather than assert the
+subagent-usage bonus was satisfied, actually spawned a `general-purpose`
+subagent (fresh context, no knowledge of how any of this was built) with
+one job: independently verify the eval suite is legitimate evidence, not
+a self-congratulatory checkbox. It read SPEC.md, the eval files, the
+production tool/config modules, and the actual EVAL_LOG.md, then reported
+back real findings rather than a rubber stamp:
+
+- **SPEC §5 Tier1 #2 (the recency query, "edited/shared in the last
+  week") wasn't tested at all** — silently swapped for an unrelated
+  topic-based query without disclosing the substitution.
+- **SPEC §5 Tier2 #1 was narrowed** to one named company without
+  disclosing it — SPEC's actual wording is an open-ended "what jobs have
+  I applied to" enumeration, untestable with simple keyword checks.
+- **The Priya not-found case's `expectedTools` only required
+  `search_gmail`**, despite its own description claiming both sources
+  must be searched — would have passed even if `search_drive` was never
+  called.
+- **Two keyword checks were too loose** (`tier1-drive-internships`,
+  `tier1-gmail-thread-summary`) — a single topic-word match could pass
+  even on a wrong or evasive answer, since neither required an actual
+  citation link.
+- **Process gap**: at review time, all of the above work (evals/*,
+  config.ts, the route.ts refactor) was uncommitted and this very
+  JOURNAL.md entry didn't exist yet, even though the same uncommitted
+  diff had already flipped SPEC.md §9's "changes logged in JOURNAL.md"
+  checkbox to done. Correctly caught as premature.
+
+**Fixed every finding for real, not cosmetically:**
+- Discovered *why* the recency case was skipped in the first place: our
+  own tool output ([`src/lib/query/tools.ts`](src/lib/query/tools.ts))
+  never exposed any date/timestamp field to the model at all — a real,
+  previously-undiscovered gap, not just a missing test. Fixed at the
+  source: [`gbrain-remote.ts`](src/lib/brain/gbrain-remote.ts)'s existing
+  `get_page` frontmatter lookup (already fetched for the citation URL, on
+  the top 3 results by relevance) now also pulls `date`, threaded through
+  to the tool output. Added an honest instruction to
+  [`config.ts`](src/lib/query/config.ts)'s system prompt: dates are only
+  present on some results, so their absence isn't evidence of "no date" —
+  the model should use what dates it has and say so plainly if that's not
+  enough to answer confidently, rather than guessing at an order.
+- Added `tier1-drive-recency` as SPEC §5 Tier1 #2's actual verbatim query,
+  with its expectation deliberately scoped to the documented limitation
+  (real Drive content or an honest caveat, not exact recency ranking —
+  which the architecture genuinely can't fully guarantee yet) rather than
+  asserting something we knew wasn't reliably achievable.
+- Added an explicit disclosure paragraph to `tier2-skilllayer-status`'s
+  description instead of a silent narrowing.
+- `tier2-priya-contract-not-found`'s `expectedTools` now requires both
+  `search_gmail` and `search_drive`, matching its own claim.
+- Both loose keyword checks now additionally require an actual citation
+  link (`mail.google.com` / real Drive/Doc URL) in a second required
+  group, not just the topic word.
+
+**Re-ran after all fixes: 5/5 still passed**, including the newly-added
+recency case, which produced genuinely honest output — the model reported
+no Drive files with confirmable edits "within the last week" and listed
+the most recent dated files it did have, rather than fabricating a
+precise weekly cutoff. Also re-confirmed via this run: the
+`tier1-stripe-not-found` and `priya` cases both explicitly noted (on
+their own, unprompted) that those exact phrases appear only as *example
+queries inside the assignment brief document itself* (now ingested as a
+Drive file) rather than being real inbox content — a subtle, correct
+distinction the model drew entirely on its own from the retrieved data.
+
+**Verified:** `tsc --noEmit`, `eslint src evals`, `next build` all clean
+after every change. Both eval runs were against live production
+infrastructure (real Render-hosted gbrain, real Supabase data, real
+Gemini calls) — no mocking anywhere in this harness.
+
+**Current state:** Both previously-acknowledged bonus gaps are now
+genuinely closed: a real, independently-verified, currently-passing eval
+loop exists and is runnable via `npm run eval`, and a real subagent was
+used during development with real findings that materially improved the
+work (not a symbolic invocation). `evals/EVAL_LOG.md` contains excerpts
+of the user's real personal Gmail/Drive content (shortlist status, real
+document names/links) — flagged to the user before deciding whether to
+commit it as public evidence or gitignore it for privacy.
