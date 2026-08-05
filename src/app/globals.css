@@ -51,7 +51,12 @@
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--text-primary);
-  --font-sans: var(--font-body);
+  /* Unified on one font everywhere — sidebar labels, timestamps, and chat
+     message text all render in the terminal mono font now, for a
+     consistent look (previously message text used a separate sans-serif
+     font per an earlier design pass, which read as inconsistent once both
+     were visible side by side — see JOURNAL.md 2026-08-05). */
+  --font-sans: var(--font-terminal);
   --font-mono: var(--font-terminal);
 }
 
@@ -67,7 +72,7 @@ html {
 body {
   background: var(--bg);
   color: var(--text-primary);
-  font-family: var(--font-body), system-ui, sans-serif;
+  font-family: var(--font-terminal), "Courier New", monospace;
 }
 
 /* Scanlines + a faint technical grid, static (never animated — flashing/

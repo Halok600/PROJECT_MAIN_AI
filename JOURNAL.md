@@ -1118,3 +1118,37 @@ from the user.
 **Current state:** Error handling implemented and verified at the logic
 level; awaiting the user's live confirmation of both the normal path and
 (if it naturally triggers) the error path.
+
+---
+
+## 2026-08-05 — Unified the app to one font (was two)
+
+**Context:** User confirmed error handling deployed and working, but
+flagged a visual regression: message text in the chat rendered in a
+different (sans-serif) font from the sidebar's mono labels/timestamps —
+visibly inconsistent side by side in a screenshot. This was a deliberate
+dual-font setup from an earlier design pass (mono for "system" chrome,
+sans-serif for "conversation" text, per that request's explicit spec at
+the time) — reversing course now that both were visible together and
+read as a mismatch rather than an intentional distinction.
+
+**Fix:** Removed the `Inter` font entirely from
+[`layout.tsx`](src/app/layout.tsx) — only `Share_Tech_Mono` remains.
+Updated [`globals.css`](src/app/globals.css): `--font-sans` now points at
+`--font-terminal` instead of the removed `--font-body`, and `body`'s
+`font-family` declaration updated to match. Grepped for any other
+`--font-body`/`font-sans` references first to make sure nothing else
+depended on the removed variable — none did.
+
+**Also raised, not yet resolved:** user reported the deployed Vercel site
+"looks bigger" than local. Font loading is identical between environments
+(same self-hosted font files, same build), so this isn't a font/CSS
+difference between the two — most likely a browser zoom-level difference
+between the two tabs being compared. Asked the user to check
+(`Ctrl+0` to reset zoom) rather than guessing at a CSS fix for an
+unconfirmed cause.
+
+**Verified:** `tsc --noEmit`, `eslint src`, `next build` all clean; no
+console errors; confirmed via `getComputedStyle(document.body).fontFamily`
+in a live page load that the entire app now resolves to
+`"Share Tech Mono", ... monospace` with no Inter fallback anywhere.
